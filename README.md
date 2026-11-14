@@ -1,4 +1,4 @@
-# Notula
+# Notula by YMD
 
 Notula mencatat hasil rapat, baik rapat online (Microsoft Teams, Zoom, Google Meet) maupun tatap muka. Hasilnya berupa transkrip dan notulen yang berisi tulisan dan gambar, lalu bisa diekspor ke Word, Excel, dan PowerPoint.
 
@@ -12,7 +12,7 @@ Buka aplikasinya: <https://malegiw.github.io/app-mom/>
 - **Merekam audio rapat online** di komputer: suara tab atau jendela Teams, Zoom, atau Meet digabung dengan mikrofon.
 - **Mengimpor transkrip** dari Teams, Zoom, atau Meet (`.vtt`, `.docx`, `.srt`, `.txt`), atau menempel teks.
 - **Mentranskripsikan rekaman** audio dan video menjadi teks dengan label pembicara (butuh kunci ElevenLabs).
-- **Menyusun notulen otomatis** dengan Claude: topik dan pembukaan, tujuan, isi pembahasan, keputusan, tindak lanjut, rangkuman, dan daftar hadir (butuh kunci API Claude).
+- **Menyusun notulen otomatis** dengan Claude: topik dan pembukaan, tujuan, isi pembahasan, keputusan, tindak lanjut, rangkuman, dan daftar hadir lewat langganan Claude Anda (salin prompt ke claude.ai, tempel jawabannya) atau otomatis dengan kunci API.
 - **Menulis atau mengubah notulen sendiri**, tanpa kunci API apa pun.
 - **Menambahkan gambar**: foto papan tulis, slide, atau tangkapan layar. Notula juga menggambar satu halaman ringkasan visual.
 - **Mengekspor** ke Word (`.docx`), Excel (`.xlsx`), dan PowerPoint (`.pptx`), lengkap dengan gambar, daftar hadir, dan transkrip.
@@ -44,10 +44,10 @@ Kunci diisi di halaman **Pengaturan** dan hanya tersimpan di browser perangkat i
 
 | Kunci | Dipakai untuk | Wajib? |
 | --- | --- | --- |
-| Claude (Anthropic) | Menyusun notulen dari transkrip | Hanya untuk notulen otomatis |
+| Claude (Anthropic) | Menyusun notulen otomatis penuh | Tidak. Tanpa kunci, pakai langganan Claude lewat salin-tempel |
 | ElevenLabs | Mengubah rekaman audio atau video menjadi teks | Tidak |
 
-Tanpa kunci apa pun, Notula tetap bisa merekam, membuat transkrip langsung, mengimpor transkrip, menulis notulen manual, dan mengekspor.
+Tanpa kunci apa pun, Notula tetap bisa menyusun notulen lewat langganan Claude (tanpa biaya tambahan), merekam, membuat transkrip langsung, mengimpor transkrip, menulis notulen manual, dan mengekspor.
 
 ## Cara pakai untuk tiap jenis rapat
 

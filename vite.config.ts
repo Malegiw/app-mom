@@ -13,7 +13,7 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "apple-touch-icon.png"],
       manifest: {
-        name: "Notula: notulen rapat",
+        name: "Notula by YMD: notulen rapat",
         short_name: "Notula",
         description:
           "Rekam rapat Teams, Zoom, atau tatap muka. Dapatkan transkrip, notulen, dan ekspor Word, Excel, PowerPoint.",

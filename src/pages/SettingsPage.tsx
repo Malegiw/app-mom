@@ -24,14 +24,17 @@ export function SettingsPage() {
           Notulen otomatis
         </h2>
         <p>
-          Notula memakai Claude untuk merangkum transkrip menjadi notulen. Buat kunci API di{" "}
+          Tanpa kunci apa pun, Notula menyusun notulen lewat langganan Claude Anda: salin prompt ke claude.ai, lalu tempel jawabannya kembali di tab Notulen. Tidak ada biaya tambahan.
+        </p>
+        <p>
+          Ingin otomatis penuh? Isi kunci API (ditagih terpisah dari langganan). Buat kunci di{" "}
           <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">
             platform.claude.com
           </a>
           . Kunci hanya dikirim ke Anthropic saat notulen dibuat.
         </p>
         <Input
-          label="Kunci API Claude"
+          label="Kunci API Claude (opsional)"
           type="password"
           autoComplete="off"
           spellCheck={false}

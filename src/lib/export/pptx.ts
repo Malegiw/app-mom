@@ -1,5 +1,5 @@
 import PptxGenJS from "pptxgenjs";
-import { APP_NAME, BRAND } from "../brand";
+import { APP_CREDIT, APP_NAME, BRAND } from "../brand";
 import { fitBox } from "../images";
 import { metaRows, namedAttendees, subtitleLine, type ExportBundle, type ExportImage } from "./common";
 
@@ -121,7 +121,7 @@ export function buildPptx(bundle: ExportBundle): PptxGenJS {
   pptx.title = `Notulen rapat: ${meeting.title}`;
   pptx.subject = "Notulen rapat";
   pptx.author = meeting.notetaker || APP_NAME;
-  pptx.company = organization || APP_NAME;
+  pptx.company = organization || APP_CREDIT;
   pptx.theme = { headFontFace: FONT, bodyFontFace: FONT };
 
   pptx.defineSlideMaster({

@@ -16,7 +16,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="sidebar">
         <Link to="/" className="brand">
           <Logo />
-          Notula
+          <span className="brandText">
+            Notula
+            <small>by YMD</small>
+          </span>
         </Link>
         <Button className="cta tone-orange" onClick={() => setCreating(true)}>
           <Plus {...ICON} />
@@ -32,14 +35,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             Pengaturan
           </NavLink>
         </nav>
-        <p className="sidebarFoot">Semua rapat tersimpan di perangkat ini.</p>
+        <p className="sidebarFoot">Notula by YMD. Semua rapat tersimpan di perangkat ini.</p>
       </aside>
 
       <div className="main">
         <header className="topbar">
           <Link to="/" className="brand">
             <Logo size={28} />
-            Notula
+            <span className="brandText">
+              Notula
+              <small>by YMD</small>
+            </span>
           </Link>
         </header>
         {children}

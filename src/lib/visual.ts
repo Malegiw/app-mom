@@ -1,4 +1,4 @@
-import { APP_NAME, BRAND, hex } from "./brand";
+import { APP_CREDIT, BRAND, hex } from "./brand";
 import { formatDate, formatDuration, formatTimeRange } from "./format";
 import { canvasToBlob } from "./images";
 import { PLATFORM_LABEL, type Meeting } from "./types";
@@ -231,7 +231,7 @@ export function drawVisualSummary(canvas: HTMLCanvasElement, meeting: Meeting): 
   ctx.fillRect(PAD, H - 58, W - PAD * 2, 2);
   ctx.fillStyle = hex(BRAND.textMuted);
   font(ctx, 20, 400);
-  ctx.fillText(`Dibuat dengan ${APP_NAME}`, PAD, H - 24);
+  ctx.fillText(`Dibuat dengan ${APP_CREDIT}`, PAD, H - 24);
   if (minutes.topic) {
     ctx.textAlign = "right";
     ctx.fillText(wrap(ctx, `Topik: ${minutes.topic}`, W - PAD * 2 - 260, 1)[0] ?? "", W - PAD, H - 24);

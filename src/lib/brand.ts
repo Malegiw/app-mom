@@ -20,3 +20,5 @@ export const BRAND = {
 export const hex = (value: string) => `#${value}`;
 
 export const APP_NAME = "Notula";
+/** The name with its maker, shown in the app header and in exported files. */
+export const APP_CREDIT = "Notula by YMD";

@@ -13,6 +13,7 @@ import { MODEL_OPTIONS, useSettings } from "@/lib/settings";
 import { emptyMinutes, type Asset, type Meeting } from "@/lib/types";
 import { drawVisualSummary, hasVisualContent } from "@/lib/visual";
 import { ExportPanel } from "./ExportPanel";
+import { HandoffPanel } from "./HandoffPanel";
 import { MinutesEditor } from "./MinutesEditor";
 import type { MinutesGenerator } from "./useMinutesGenerator";
 
@@ -20,6 +21,7 @@ export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting
   const settings = useSettings();
   const images = useLiveQuery(() => listAssets(meeting.id, "image"), [meeting.id]) ?? [];
   const [editing, setEditing] = useState(false);
+  const [handingOff, setHandingOff] = useState(false);
   const minutes = meeting.minutes;
   const hasTranscript = meeting.segments.length > 0;
   const hasKey = settings.anthropicKey.trim().length > 0;
@@ -36,6 +38,10 @@ export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting
         </Button>
       </div>
     );
+  }
+
+  if (handingOff) {
+    return <HandoffPanel meeting={meeting} onDone={() => setHandingOff(false)} onCancel={() => setHandingOff(false)} />;
   }
 
   if (editing) {
@@ -62,8 +68,8 @@ export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting
       <div className="stack">
         {errorAlert}
         {!hasKey ? (
-          <Alert tone="info" title="Ringkasan otomatis butuh kunci API Claude">
-            Isi kunci API di <Link to="/pengaturan">Pengaturan</Link> agar Notula bisa menyusun notulen dari transkrip. Tanpa kunci, Anda tetap bisa menulis notulen sendiri dan mengekspornya.
+          <Alert tone="info" title="Pakai langganan Claude Anda">
+            Salin prompt ke claude.ai, lalu tempel jawabannya di sini. Tanpa kunci API dan tanpa biaya tambahan. Mau otomatis penuh? Isi kunci API di <Link to="/pengaturan">Pengaturan</Link>.
           </Alert>
         ) : null}
         <EmptyState
@@ -76,10 +82,22 @@ export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting
           action={
             <div className="row">
               {hasTranscript ? (
-                <Button className="tone-blue" onClick={() => void generator.generate()} disabled={!hasKey}>
-                  <Sparkles size={18} strokeWidth={1.75} aria-hidden="true" />
-                  Buat notulen
-                </Button>
+                hasKey ? (
+                  <>
+                    <Button className="tone-blue" onClick={() => void generator.generate()}>
+                      <Sparkles size={18} strokeWidth={1.75} aria-hidden="true" />
+                      Buat notulen
+                    </Button>
+                    <Button variant="secondary" onClick={() => setHandingOff(true)}>
+                      Pakai langganan Claude
+                    </Button>
+                  </>
+                ) : (
+                  <Button className="tone-blue" onClick={() => setHandingOff(true)}>
+                    <Sparkles size={18} strokeWidth={1.75} aria-hidden="true" />
+                    Buat notulen dengan langganan Claude
+                  </Button>
+                )
               ) : (
                 <Button className="tone-blue" onClick={() => onOpenTab("transkrip")}>
                   Tambah transkrip
@@ -108,8 +126,8 @@ export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting
             <Pencil size={16} strokeWidth={1.75} aria-hidden="true" />
             Ubah
           </Button>
-          {hasTranscript && hasKey ? (
-            <Button variant="secondary" size="sm" onClick={() => void generator.generate()}>
+          {hasTranscript ? (
+            <Button variant="secondary" size="sm" onClick={() => (hasKey ? void generator.generate() : setHandingOff(true))}>
               <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
               Buat ulang
             </Button>

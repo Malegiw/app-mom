@@ -17,7 +17,7 @@ import {
   VerticalAlign,
   WidthType,
 } from "docx";
-import { APP_NAME, BRAND } from "../brand";
+import { APP_CREDIT, APP_NAME, BRAND } from "../brand";
 import { formatClock } from "../format";
 import { dataUrlToBytes, fitBox } from "../images";
 import { metaRows, namedAttendees, subtitleLine, type ExportBundle, type ExportImage } from "./common";
@@ -278,7 +278,7 @@ export function buildDocx(bundle: ExportBundle): Document {
   return new Document({
     creator: APP_NAME,
     title: `Notulen rapat: ${meeting.title}`,
-    description: "Notulen rapat yang dibuat dengan Notula",
+    description: `Notulen rapat yang dibuat dengan ${APP_CREDIT}`,
     styles: {
       default: { document: { run: { font: FONT, size: 22, color: BRAND.ink } } },
       paragraphStyles: [
@@ -328,7 +328,7 @@ export function buildDocx(bundle: ExportBundle): Document {
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
                 children: [
-                  new TextRun({ text: `Notulen rapat: ${meeting.title}   |   Halaman `, color: BRAND.textMuted, size: 18 }),
+                  new TextRun({ text: `${APP_CREDIT}   |   Notulen rapat: ${meeting.title}   |   Halaman `, color: BRAND.textMuted, size: 18 }),
                   new TextRun({ children: [PageNumber.CURRENT], color: BRAND.textMuted, size: 18 }),
                   new TextRun({ text: " dari ", color: BRAND.textMuted, size: 18 }),
                   new TextRun({ children: [PageNumber.TOTAL_PAGES], color: BRAND.textMuted, size: 18 }),

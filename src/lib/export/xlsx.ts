@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { APP_NAME, BRAND } from "../brand";
+import { APP_CREDIT, BRAND } from "../brand";
 import { formatClock } from "../format";
 import { fitBox } from "../images";
 import { metaRows, namedAttendees, subtitleLine, type ExportBundle, type ExportImage } from "./common";
@@ -61,7 +61,7 @@ export function buildWorkbook(bundle: ExportBundle): ExcelJS.Workbook {
   const { meeting, images, visual, organization } = bundle;
   const minutes = meeting.minutes;
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = APP_NAME;
+  workbook.creator = APP_CREDIT;
   workbook.company = organization;
   workbook.title = `Notulen rapat: ${meeting.title}`;
   workbook.created = new Date(meeting.createdAt);
