@@ -1,0 +1,103 @@
+/*
+ * Notula brand theme, layered over Arc's foundation tokens.
+ * Palette: white, blue, and orange, anchored on three Pantone references.
+ * Hex values are the usual sRGB approximations of each swatch.
+ */
+:root {
+  --pantone-bright-white: #f4f5f0; /* PANTONE 11-0601 TCX Bright White */
+  --pantone-classic-blue: #0f4c81; /* PANTONE 19-4052 TCX Classic Blue */
+  --pantone-orange-021: #fe5000; /* PANTONE Orange 021 C */
+
+  --brand-blue: var(--pantone-classic-blue);
+  --brand-blue-strong: #0a3961;
+  --brand-blue-subtle: rgb(15 76 129 / 0.09);
+  --brand-orange: var(--pantone-orange-021);
+  --brand-orange-strong: #c43e00; /* orange that stays readable as text on white */
+  --brand-orange-subtle: rgb(254 80 0 / 0.1);
+  --brand-ink: #0b2239; /* blue-black ink, also the label color on orange */
+
+  --background: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-muted: var(--pantone-bright-white);
+  --foreground: var(--brand-ink);
+  --text-secondary: #46586b;
+  --text-muted: #66778a;
+  --border: #e3e7ec;
+  --border-subtle: #eef1f4;
+  --border-strong: #c3ccd6;
+
+  --series-1: var(--brand-blue);
+  --series-2: var(--brand-orange);
+  --series-3: #5b8fbf;
+  --series-4: #ffa97a;
+}
+
+:root[data-accent="blue"] {
+  --accent: var(--brand-blue);
+  --accent-strong: var(--brand-blue-strong);
+  --accent-subtle: var(--brand-blue-subtle);
+  --accent-foreground: #ffffff;
+  --control-on: var(--brand-blue);
+  --control-thumb-on: #ffffff;
+  --control-glyph: #ffffff;
+}
+
+/*
+ * Arc's primary button paints with --foreground and writes with --background.
+ * Scoping those two tokens to one element recolors that button without touching its internals.
+ */
+.tone-blue {
+  --foreground: var(--brand-blue);
+  --background: #ffffff;
+}
+.tone-orange {
+  --foreground: var(--brand-orange);
+  --background: var(--brand-ink);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 500;
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+img {
+  max-width: 100%;
+}
+::selection {
+  background: var(--brand-blue-subtle);
+}
