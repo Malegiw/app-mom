@@ -1,15 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addAsset, appendLiveText, db } from "@/lib/db";
+import { addAsset, appendLiveSegments, appendLiveText, db } from "@/lib/db";
+import { engineTranscribe } from "@/lib/engine";
 import { nowHHMM, todayISO } from "@/lib/format";
+import { LiveChunker, type AudioChunk } from "@/lib/liveAudio";
 import { describeCaptureError, extensionForMime, startRecording, type AudioSource, type RecordingSession } from "@/lib/recorder";
 import { LiveTranscriber, speechSupported } from "@/lib/speech";
-import { uid, type Meeting } from "@/lib/types";
+import { uid, type Lang, type Meeting } from "@/lib/types";
 
 export type RecorderStatus = "idle" | "starting" | "recording" | "paused" | "saving";
+
+/**
+ * How words reach the transcript while recording.
+ * "engine": the Notula engine transcribes short pieces with Whisper. Hears everything that is recorded.
+ * "browser": the browser's own speech recognition. Hears the microphone only.
+ * "off": audio is recorded and transcribed later.
+ */
+export type LiveMode = "engine" | "browser" | "off";
+
+export interface FinishedRecording {
+  meetingId: string;
+  sessionId: string;
+  /** Whether a live transcript was being written during this recording. */
+  transcribed: boolean;
+}
 
 interface ActiveRecording {
   session: RecordingSession;
   transcriber: LiveTranscriber | null;
+  chunker: LiveChunker | null;
+  /** Live pieces still being transcribed by the engine, in order. */
+  pending: Promise<void>;
+  lastText: string;
+  language: Lang;
+  mode: LiveMode;
   sessionId: string;
   meetingId: string;
   /** Meeting length before this recording began, so timestamps continue across several recordings. */
@@ -25,13 +48,15 @@ export interface Recorder {
   status: RecorderStatus;
   /** Seconds recorded in the current session. */
   elapsed: number;
-  /** Words heard but not yet final. */
+  /** Words heard but not yet final (browser captions only). */
   interim: string;
   error: string | null;
-  /** A problem with live captions that does not stop the audio recording. */
+  /** A problem with the live transcript that does not stop the audio recording. */
   notice: string | null;
-  liveCaptions: boolean;
-  start: (options: { source: AudioSource; live: boolean }) => Promise<void>;
+  liveMode: LiveMode;
+  /** Pieces of audio waiting for the engine to transcribe. */
+  backlog: number;
+  start: (options: { source: AudioSource; live: LiveMode }) => Promise<void>;
   pause: () => void;
   resume: () => void;
   stop: () => Promise<void>;
@@ -42,14 +67,19 @@ export interface Recorder {
  * Owns one recording at a time for a meeting. It lives above the tabs so a recording keeps running
  * while the person looks at minutes, attendees, or pictures.
  */
-export function useRecorder(meeting: Meeting | undefined): Recorder {
+export function useRecorder(meeting: Meeting | undefined, onFinished?: (recording: FinishedRecording) => void): Recorder {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [liveCaptions, setLiveCaptions] = useState(false);
+  const [liveMode, setLiveMode] = useState<LiveMode>("off");
+  const [backlog, setBacklog] = useState(0);
   const active = useRef<ActiveRecording | null>(null);
+  const finished = useRef(onFinished);
+  finished.current = onFinished;
+  const mounted = useRef(true);
+  const stopRef = useRef<() => Promise<void>>(async () => undefined);
 
   const seconds = () => {
     const rec = active.current;
@@ -57,7 +87,26 @@ export function useRecorder(meeting: Meeting | undefined): Recorder {
     return rec.accumulated + (rec.running ? (performance.now() - rec.resumedAt) / 1000 : 0);
   };
 
-  const finish = useCallback(async () => {
+  /** Sends one piece to the engine. Pieces are handled one after another so the text stays in order. */
+  const transcribeChunk = (rec: ActiveRecording, chunk: AudioChunk) => {
+    setBacklog((count) => count + 1);
+    rec.pending = rec.pending.then(async () => {
+      try {
+        const result = await engineTranscribe(chunk.wav, { language: rec.language, prompt: rec.lastText, wav16k: true });
+        const items = result.segments.map((segment) => ({ start: rec.base + chunk.startSec + segment.start, text: segment.text }));
+        if (items.length > 0) {
+          rec.lastText = `${rec.lastText} ${items.map((item) => item.text).join(" ")}`.slice(-300);
+          await appendLiveSegments(rec.meetingId, rec.sessionId, items);
+        }
+      } catch (cause) {
+        if (mounted.current) setNotice(cause instanceof Error ? cause.message : "Transkrip langsung terputus. Rekaman audio tetap berjalan.");
+      } finally {
+        if (mounted.current) setBacklog((count) => Math.max(0, count - 1));
+      }
+    });
+  };
+
+  const finish = useCallback(async (announce: boolean) => {
     const rec = active.current;
     if (!rec) return;
     active.current = null;
@@ -66,6 +115,8 @@ export function useRecorder(meeting: Meeting | undefined): Recorder {
     const total = rec.accumulated + (rec.running ? (performance.now() - rec.resumedAt) / 1000 : 0);
     void rec.wakeLock?.release().catch(() => undefined);
     const blob = await rec.session.stop();
+    // The tail of the recording is still in the chunker: send it, then wait for every piece to come back.
+    rec.chunker?.flush();
     if (blob.size > 0) {
       await addAsset({
         meetingId: rec.meetingId,
@@ -81,6 +132,8 @@ export function useRecorder(meeting: Meeting | undefined): Recorder {
       });
     }
     await db.meetings.update(rec.meetingId, { durationSec: Math.round(rec.base + total), endTime: nowHHMM(), updatedAt: Date.now() });
+    await rec.pending;
+    if (announce) finished.current?.({ meetingId: rec.meetingId, sessionId: rec.sessionId, transcribed: rec.mode !== "off" });
   }, []);
 
   const start = useCallback<Recorder["start"]>(
@@ -90,16 +143,19 @@ export function useRecorder(meeting: Meeting | undefined): Recorder {
       setNotice(null);
       setInterim("");
       setElapsed(0);
+      setBacklog(0);
       setStatus("starting");
 
       const sessionId = uid();
       const meetingId = meeting.id;
       const base = meeting.durationSec;
+      // The browser's captions only hear the microphone, so they make no sense for shared sound alone.
+      const mode: LiveMode = live === "browser" && (source === "system" || !speechSupported()) ? "off" : live;
 
       // Speech recognition must start inside the tap that asked for it, so it begins before the
       // microphone prompt resolves. Captions that arrive early are stamped from zero.
       let transcriber: LiveTranscriber | null = null;
-      if (live && speechSupported()) {
+      if (mode === "browser") {
         transcriber = new LiveTranscriber(meeting.language, {
           onFinal: (text) => void appendLiveText(meetingId, sessionId, text, base + seconds()),
           onInterim: setInterim,
@@ -107,38 +163,57 @@ export function useRecorder(meeting: Meeting | undefined): Recorder {
         });
         transcriber.start();
       }
-      setLiveCaptions(transcriber !== null);
+      setLiveMode(mode);
+
+      // The record is created before the audio starts so the chunker has somewhere to send its pieces.
+      const rec: ActiveRecording = {
+        session: undefined as unknown as RecordingSession,
+        transcriber,
+        chunker: null,
+        pending: Promise.resolve(),
+        lastText: "",
+        language: meeting.language,
+        mode,
+        sessionId,
+        meetingId,
+        base,
+        accumulated: 0,
+        resumedAt: 0,
+        running: false,
+        wakeLock: null,
+        timer: 0,
+      };
 
       try {
-        const session = await startRecording(source);
-        let wakeLock: ActiveRecording["wakeLock"] = null;
+        let chunker: LiveChunker | null = null;
+        const session = await startRecording(source, {
+          onPcm: mode === "engine" ? (frame) => chunker?.push(frame) : undefined,
+          onEnded: () => void stopRef.current(),
+        });
+        if (mode === "engine") chunker = new LiveChunker(session.sampleRate, (chunk) => transcribeChunk(rec, chunk));
         try {
           // Keeps a phone or tablet from sleeping mid-meeting. Not every browser has it.
           const nav = navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> } };
-          wakeLock = (await nav.wakeLock?.request("screen")) ?? null;
+          rec.wakeLock = (await nav.wakeLock?.request("screen")) ?? null;
         } catch {
-          wakeLock = null;
+          rec.wakeLock = null;
         }
-        active.current = {
-          session,
-          transcriber,
-          sessionId,
-          meetingId,
-          base,
-          accumulated: 0,
-          resumedAt: performance.now(),
-          running: true,
-          wakeLock,
-          timer: window.setInterval(() => setElapsed(seconds()), 250),
-        };
+        rec.session = session;
+        rec.chunker = chunker;
+        rec.resumedAt = performance.now();
+        rec.running = true;
+        rec.timer = window.setInterval(() => setElapsed(seconds()), 250);
+        active.current = rec;
         setStatus("recording");
       } catch (cause) {
         transcriber?.stop();
-        setLiveCaptions(false);
+        setLiveMode("off");
         setError(describeCaptureError(cause));
         setStatus("idle");
       }
     },
+    // transcribeChunk only touches refs and stable setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [meeting, status],
   );
 
@@ -168,23 +243,25 @@ export function useRecorder(meeting: Meeting | undefined): Recorder {
     setStatus("saving");
     setInterim("");
     try {
-      await finish();
+      await finish(true);
     } catch {
       setError("Rekaman gagal disimpan. Transkrip yang sudah tercatat tetap aman.");
     } finally {
       setElapsed(0);
-      setLiveCaptions(false);
+      setLiveMode("off");
       setStatus("idle");
     }
   }, [finish]);
+  stopRef.current = stop;
 
   // Leaving the meeting page ends the recording and keeps what was captured.
-  useEffect(
-    () => () => {
-      void finish();
-    },
-    [finish],
-  );
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      void finish(false);
+    };
+  }, [finish]);
 
   // Closing the tab mid-recording would lose the audio, so ask first.
   useEffect(() => {
@@ -198,5 +275,5 @@ export function useRecorder(meeting: Meeting | undefined): Recorder {
 
   const level = useCallback(() => (active.current?.running ? active.current.session.level() : 0), []);
 
-  return { status, elapsed, interim, error, notice, liveCaptions, start, pause, resume, stop, level };
+  return { status, elapsed, interim, error, notice, liveMode, backlog, start, pause, resume, stop, level };
 }

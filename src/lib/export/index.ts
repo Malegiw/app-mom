@@ -11,8 +11,9 @@ export { EXPORT_INFO, type ExportKind } from "./common";
 export async function gatherBundle(meeting: Meeting, organization: string): Promise<ExportBundle> {
   const assets = await listAssets(meeting.id, "image");
   const images: ExportImage[] = [];
+  const drawings: ExportImage[] = [];
   for (const asset of assets) {
-    images.push({
+    (asset.generated ? drawings : images).push({
       name: asset.name,
       caption: asset.caption,
       dataUrl: await blobToDataUrl(asset.blob),
@@ -32,7 +33,7 @@ export async function gatherBundle(meeting: Meeting, organization: string): Prom
         type: "png",
       }
     : null;
-  return { meeting, images, visual, organization };
+  return { meeting, images, visual, drawings, organization };
 }
 
 /** Builds the file. Each format's library is loaded on first use so the app itself stays light. */

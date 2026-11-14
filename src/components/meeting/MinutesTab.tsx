@@ -9,29 +9,39 @@ import { Button } from "@/components/arc/button/button";
 import { EmptyState } from "@/components/arc/empty-state/empty-state";
 import { TextShimmer } from "@/components/arc/text-shimmer/text-shimmer";
 import { listAssets, updateMeeting } from "@/lib/db";
-import { MODEL_OPTIONS, useSettings } from "@/lib/settings";
+import { modelDisplayName, useEngine } from "@/lib/engine";
+import { useSettings } from "@/lib/settings";
 import { emptyMinutes, type Asset, type Meeting } from "@/lib/types";
 import { drawVisualSummary, hasVisualContent } from "@/lib/visual";
 import { ExportPanel } from "./ExportPanel";
 import { HandoffPanel } from "./HandoffPanel";
 import { MinutesEditor } from "./MinutesEditor";
-import type { MinutesGenerator } from "./useMinutesGenerator";
+import { pickProvider, type MinutesGenerator } from "./useMinutesGenerator";
 
 export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting; generator: MinutesGenerator; onOpenTab: (tab: string) => void }) {
   const settings = useSettings();
-  const images = useLiveQuery(() => listAssets(meeting.id, "image"), [meeting.id]) ?? [];
+  const engine = useEngine();
+  const allImages = useLiveQuery(() => listAssets(meeting.id, "image"), [meeting.id]) ?? [];
+  // Pictures the person added, and pictures Claude drew for the minutes, are shown in separate sections.
+  const images = allImages.filter((image) => !image.generated);
+  const drawings = allImages.filter((image) => image.generated);
   const [editing, setEditing] = useState(false);
   const [handingOff, setHandingOff] = useState(false);
   const minutes = meeting.minutes;
   const hasTranscript = meeting.segments.length > 0;
-  const hasKey = settings.anthropicKey.trim().length > 0;
+  const provider = pickProvider(engine, settings);
+  const hasKey = provider !== null;
 
   if (generator.working) {
     return (
       <div className="panel working" aria-busy="true">
-        <TextShimmer as="p">Menyusun notulen dari transkrip</TextShimmer>
+        <TextShimmer as="p">{generator.stage === "drawing" ? "Menyiapkan gambar notulen" : "Menyusun notulen dari transkrip"}</TextShimmer>
         <p className="muted small" style={{ fontVariantNumeric: "tabular-nums" }}>
-          {generator.progress > 0 ? `${generator.progress.toLocaleString("id-ID")} karakter ditulis` : "Claude sedang membaca transkrip. Rapat panjang bisa butuh satu sampai dua menit."}
+          {generator.stage === "drawing"
+            ? "Gambar buatan Claude sedang diubah menjadi berkas gambar."
+            : generator.progress > 0
+              ? `${generator.progress.toLocaleString("id-ID")} karakter ditulis`
+              : "Claude sedang membaca transkrip. Rapat panjang bisa butuh satu sampai dua menit."}
         </p>
         <Button variant="secondary" onClick={generator.cancel}>
           Batalkan
@@ -67,9 +77,15 @@ export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting
     return (
       <div className="stack">
         {errorAlert}
-        {!hasKey ? (
+        {provider === "engine" ? (
+          <Alert tone="info" title="Notulen otomatis lewat langganan Claude">
+            Mesin Notula di komputer ini terhubung ke Claude Code
+            {engine.claude.plan ? ` (paket ${engine.claude.plan[0].toUpperCase()}${engine.claude.plan.slice(1)})` : ""}. Notulen dan gambarnya dibuat tanpa kunci API.
+          </Alert>
+        ) : provider === null ? (
           <Alert tone="info" title="Pakai langganan Claude Anda">
-            Salin prompt ke claude.ai, lalu tempel jawabannya di sini. Tanpa kunci API dan tanpa biaya tambahan. Mau otomatis penuh? Isi kunci API di <Link to="/pengaturan">Pengaturan</Link>.
+            Di perangkat ini mesin Notula belum terhubung, jadi caranya salin-tempel: salin prompt ke claude.ai, lalu tempel jawabannya di sini. Untuk notulen otomatis, nyalakan mesin Notula di
+            komputer (lihat <Link to="/pengaturan">Pengaturan</Link>).
           </Alert>
         ) : null}
         <EmptyState
@@ -113,7 +129,7 @@ export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting
     );
   }
 
-  const modelLabel = MODEL_OPTIONS.find((option) => option.value === minutes.model)?.label.split(" (")[0];
+  const modelLabel = minutes.model ? modelDisplayName(minutes.model) : "Claude";
   const attendees = meeting.attendees.filter((attendee) => attendee.name.trim());
 
   return (
@@ -225,10 +241,13 @@ export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting
         </section>
       ) : null}
 
-      {hasVisualContent(meeting) ? (
+      {hasVisualContent(meeting) || drawings.length > 0 ? (
         <section className="minutesSection" aria-labelledby="m-visual">
           <h2 id="m-visual">Ringkasan visual</h2>
-          <VisualSummary meeting={meeting} />
+          {hasVisualContent(meeting) ? <VisualSummary meeting={meeting} /> : null}
+          {drawings.map((image) => (
+            <Figure key={image.id} image={image} wide />
+          ))}
         </section>
       ) : null}
 
@@ -301,7 +320,7 @@ function VisualSummary({ meeting }: { meeting: Meeting }) {
   return <canvas ref={canvas} className="visual" role="img" aria-label={`Ringkasan visual rapat ${meeting.title}`} />;
 }
 
-export function Figure({ image }: { image: Asset }) {
+export function Figure({ image, wide = false }: { image: Asset; wide?: boolean }) {
   const [url, setUrl] = useState("");
   useEffect(() => {
     const objectUrl = URL.createObjectURL(image.blob);
@@ -309,8 +328,8 @@ export function Figure({ image }: { image: Asset }) {
     return () => URL.revokeObjectURL(objectUrl);
   }, [image.blob]);
   return (
-    <figure className="figure">
-      {url ? <img src={url} alt={image.caption || image.name} loading="lazy" /> : <div className="visual" style={{ aspectRatio: "4 / 3" }} />}
+    <figure className={wide ? "figure wide" : "figure"}>
+      {url ? <img src={url} alt={image.caption || image.name} loading="lazy" /> : <div className="visual" style={{ aspectRatio: wide ? "16 / 9" : "4 / 3" }} />}
       {image.caption ? <figcaption>{image.caption}</figcaption> : null}
     </figure>
   );

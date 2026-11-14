@@ -24,9 +24,58 @@ export const MinutesSchema = z.object({
 
 export type GeneratedMinutes = z.infer<typeof MinutesSchema>;
 
+/** One picture Claude draws for the minutes, as a self-contained SVG document. */
+export const VisualSchema = z.object({ title: z.string(), caption: z.string(), svg: z.string() });
+export type GeneratedVisual = z.infer<typeof VisualSchema>;
+
+/** The answer when pictures are requested too. A missing or malformed list becomes an empty one. */
+export const MinutesWithVisualsSchema = MinutesSchema.extend({ visuals: z.array(VisualSchema).catch([]) });
+export type GeneratedMinutesWithVisuals = z.infer<typeof MinutesWithVisualsSchema>;
+
+const text = { type: "string" } as const;
+const list = (items: object) => ({ type: "array", items }) as const;
+const object = (properties: Record<string, object>) =>
+  ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false }) as const;
+
+/** The same shape as the schemas above, as the JSON Schema that constrains Claude's answer. */
+export function outputJsonSchema(withVisuals: boolean): Record<string, unknown> {
+  const fields: Record<string, object> = {
+    title: text,
+    topic: text,
+    opening: text,
+    objectives: list(text),
+    discussion: list(object({ heading: text, summary: text, points: list(text) })),
+    decisions: list(text),
+    actionItems: list(object({ task: text, owner: text, due: text })),
+    summary: text,
+    attendees: list(object({ name: text, role: text })),
+    imageCaptions: list(object({ index: { type: "integer" }, caption: text })),
+  };
+  if (withVisuals) fields.visuals = list(object({ title: text, caption: text, svg: text }));
+  return object(fields);
+}
+
+/** Added to the instructions when Claude should also draw pictures. Colors match src/lib/brand.ts. */
+export function visualsInstructions(language: Lang): string {
+  return `
+- visuals: one to three pictures that let a reader take in the meeting at a glance. Choose what this meeting calls for: the flow of a process or decision that was discussed, a timeline of the follow-ups with owners and dates, a comparison of options that were weighed, a map from a problem to its causes and the agreed fix, or a simple chart when the meeting gave real numbers. Each picture explains one idea. Do not show the same content twice, and do not restate the whole minutes. Readers expect a picture with their minutes, so give at least one whenever the meeting reached a decision, assigned a follow-up, or walked through a process. A short meeting gets one picture; return an empty list only when the transcript has nothing of substance to show.
+
+Each visual has a title (a few words), a caption (one sentence on what it shows), and svg: one complete, self-contained SVG document. The picture is turned into an image and placed in Word and PowerPoint files, so follow these rules exactly:
+  - Root element: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">, and the first child is a white rectangle covering the whole canvas.
+  - Colors: blue #0F4C81 for the main shapes, orange #FE5000 for the one thing the reader should notice first, #0B2239 for text, #46586B for secondary text, #E7EEF5 and #FFEDE5 for soft fills, #D5DCE4 for lines, and white. No gradients, shadows, filters, or opacity tricks.
+  - Text: font-family="Helvetica, Arial, sans-serif". At least 44px for the heading of the picture and 28px for every label. SVG does not wrap text, so break each label yourself into <tspan> lines of about 26 characters at most, and size every box to fit its lines with 24px of padding. White text on blue shapes, #0B2239 on light shapes and on orange.
+  - Layout: keep 60px clear at every edge. Plan positions on a grid before writing. No text or shape may overlap another or run outside its box or the canvas. Arrows go between boxes, never across text.
+  - Use only rect, circle, ellipse, line, polyline, polygon, path, text, tspan, g, defs, and marker. No image, foreignObject, script, style, link, font, or animation elements, and nothing loaded from outside the document.
+  - Write every label in ${LANGUAGE_NAME[language]}, and use only facts from this meeting.`;
+}
+
 export const LANGUAGE_NAME: Record<Lang, string> = { id: "Bahasa Indonesia", en: "English" };
 
-export function systemPrompt(language: Lang): string {
+export function systemPrompt(language: Lang, withVisuals = false): string {
+  return `${baseInstructions(language)}${withVisuals ? visualsInstructions(language) : ""}`;
+}
+
+function baseInstructions(language: Lang): string {
   return `You write the official minutes of a meeting from its transcript. The minutes are exported to Word, Excel, and PowerPoint and sent to the attendees and to people who were not in the room, so they must stand on their own: someone who missed the meeting should understand what was discussed, what was decided, and who does what next.
 
 Write every field in ${LANGUAGE_NAME[language]}, in a clear, professional register, whatever language the transcript is in. Keep names, product names, and figures exactly as spoken.

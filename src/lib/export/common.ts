@@ -17,6 +17,8 @@ export interface ExportBundle {
   images: ExportImage[];
   /** The one-page visual summary drawn by the app, when minutes exist. */
   visual: ExportImage | null;
+  /** Pictures Claude drew for the minutes. Their captions read "Title. What it shows." */
+  drawings: ExportImage[];
   organization: string;
 }
 

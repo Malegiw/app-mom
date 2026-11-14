@@ -58,7 +58,7 @@ function placeImage(workbook: ExcelJS.Workbook, sheet: ExcelJS.Worksheet, image:
 }
 
 export function buildWorkbook(bundle: ExportBundle): ExcelJS.Workbook {
-  const { meeting, images, visual, organization } = bundle;
+  const { meeting, images, visual, drawings, organization } = bundle;
   const minutes = meeting.minutes;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = APP_CREDIT;
@@ -190,7 +190,7 @@ export function buildWorkbook(bundle: ExportBundle): ExcelJS.Workbook {
   if (meeting.segments.length > 0) transcript.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 3 } };
 
   // Sheet 7: the pictures, each with its caption.
-  if (visual || images.length > 0) {
+  if (visual || drawings.length > 0 || images.length > 0) {
     const gallery = workbook.addWorksheet("Gambar", { views: [{ showGridLines: false }] });
     gallery.columns = [{ width: 120 }];
     let row = 1;
@@ -205,6 +205,10 @@ export function buildWorkbook(bundle: ExportBundle): ExcelJS.Workbook {
       caption("Ringkasan visual", true);
       row = placeImage(workbook, gallery, visual, row, 800, 450);
     }
+    drawings.forEach((image, index) => {
+      caption(`Ilustrasi ${index + 1}. ${image.caption || image.name}`, false);
+      row = placeImage(workbook, gallery, image, row, 800, 450);
+    });
     images.forEach((image, index) => {
       caption(`Gambar ${index + 1}. ${image.caption || image.name}`, false);
       row = placeImage(workbook, gallery, image, row, 720, 480);

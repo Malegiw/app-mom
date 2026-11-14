@@ -26,6 +26,7 @@ const bundle = async (): Promise<ExportBundle> => ({
   meeting: buildSampleMeeting(new Date(2026, 10, 14)),
   images: [await image("papan-tulis.png", "Sketsa jadwal di papan tulis", "#fe5000", 1200, 675)],
   visual: await image("ringkasan.png", "Ringkasan visual rapat", "#0f4c81", 1600, 900),
+  drawings: [await image("alur.png", "Alur menuju peluncuran. Tiga langkah sebelum rilis tanggal 8.", "#e7eef5", 1600, 900)],
   organization: "PT Contoh Sejahtera",
 });
 
@@ -46,13 +47,16 @@ describe("exports", () => {
     expect(xml).toContain("Koordinasi peluncuran aplikasi pemesanan versi 2");
     expect(xml).toContain("Dimas Saputra");
     expect(xml).toContain("Tidak hadir");
-    expect(names.filter((name) => name.startsWith("word/media/"))).toHaveLength(2);
+    expect(xml).toContain("Ilustrasi 1");
+    expect(xml).toContain("Tiga langkah sebelum rilis tanggal 8.");
+    expect(names.filter((name) => name.startsWith("word/media/"))).toHaveLength(3);
   });
 
   it("builds a Word document for a meeting that has no minutes yet", async () => {
     const data = await bundle();
     data.meeting.minutes = null;
     data.visual = null;
+    data.drawings = [];
     const buffer = await Packer.toBuffer(buildDocx(data));
     const { zip } = await parts(buffer);
     const xml = await zip.file("word/document.xml")!.async("string");
@@ -73,7 +77,7 @@ describe("exports", () => {
     expect(workbook.getWorksheet("Daftar hadir")!.rowCount).toBe(6);
     expect(workbook.getWorksheet("Transkrip")!.rowCount).toBe(15);
     const { names } = await parts(buffer as ArrayBuffer);
-    expect(names.filter((name) => name.startsWith("xl/media/"))).toHaveLength(2);
+    expect(names.filter((name) => name.startsWith("xl/media/"))).toHaveLength(3);
   });
 
   it("builds a PowerPoint deck with a slide per section", async () => {
@@ -81,12 +85,14 @@ describe("exports", () => {
     save("contoh.pptx", data);
     const { zip, names } = await parts(data);
     const slides = names.filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name));
-    // cover, details, opening, objectives, 3 discussion, decisions, follow-ups, summary, visual, picture, attendees
-    expect(slides).toHaveLength(13);
+    // cover, details, opening, objectives, 3 discussion, decisions, follow-ups, summary, visual, drawing, picture, attendees
+    expect(slides).toHaveLength(14);
     const all = (await Promise.all(slides.map((name) => zip.file(name)!.async("string")))).join("\n");
     for (const title of ["Detail rapat", "Pembukaan", "Tujuan", "Keputusan", "Tindak lanjut", "Rangkuman", "Ringkasan visual", "Dokumentasi", "Daftar hadir"]) {
       expect(all).toContain(title);
     }
     expect(all).toContain("Jadwal peluncuran");
+    // The drawing's own title heads its slide.
+    expect(all).toContain("Alur menuju peluncuran");
   });
 });

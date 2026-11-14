@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { meetingBrief, MinutesSchema, systemPrompt, toMinutes, type GeneratedMinutes } from "./minutesPrompt";
+import { meetingBrief, MinutesSchema, outputJsonSchema, systemPrompt, toMinutes, type GeneratedMinutes } from "./minutesPrompt";
 import type { Lang, Meeting } from "./types";
 
 /**
@@ -10,24 +10,7 @@ import type { Lang, Meeting } from "./types";
 export { toMinutes };
 export type { GeneratedMinutes };
 
-/** The same shape as MinutesSchema, spelled out as the JSON Schema that the API constrains output to. */
-const text = { type: "string" } as const;
-const list = (items: object) => ({ type: "array", items }) as const;
-const object = (properties: Record<string, object>) =>
-  ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false }) as const;
-
-const OUTPUT_SCHEMA = object({
-  title: text,
-  topic: text,
-  opening: text,
-  objectives: list(text),
-  discussion: list(object({ heading: text, summary: text, points: list(text) })),
-  decisions: list(text),
-  actionItems: list(object({ task: text, owner: text, due: text })),
-  summary: text,
-  attendees: list(object({ name: text, role: text })),
-  imageCaptions: list(object({ index: { type: "integer" }, caption: text })),
-});
+const OUTPUT_SCHEMA = outputJsonSchema(false);
 
 export interface ModelImage {
   /** Base64 JPEG data, without the data URL prefix. */

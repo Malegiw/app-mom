@@ -144,3 +144,38 @@ export async function appendLiveText(meetingId: string, sessionId: string, phras
       meeting.updatedAt = Date.now();
     });
 }
+
+/**
+ * Adds text that the engine transcribed from one live chunk. Like captions, chunks close together
+ * are joined into paragraphs so the transcript reads as speech, not as a list of fragments.
+ */
+export async function appendLiveSegments(meetingId: string, sessionId: string, items: { start: number; text: string }[]): Promise<void> {
+  const fresh = items.map((item) => ({ start: item.start, text: item.text.trim() })).filter((item) => item.text);
+  if (fresh.length === 0) return;
+  await db.meetings
+    .where("id")
+    .equals(meetingId)
+    .modify((meeting) => {
+      for (const item of fresh) {
+        const last = meeting.segments[meeting.segments.length - 1];
+        const sameRun =
+          last !== undefined &&
+          last.source === sessionId &&
+          !last.speaker &&
+          last.text.length + item.text.length < 520 &&
+          item.start - (last.start ?? item.start) < 75;
+        if (sameRun) last.text = `${last.text} ${item.text}`;
+        else meeting.segments.push({ id: uid(), start: Math.round(item.start), speaker: "", text: item.text, source: sessionId });
+      }
+      meeting.updatedAt = Date.now();
+    });
+}
+
+/** Removes the pictures Claude drew for a meeting, before a fresh set replaces them. */
+export async function deleteGeneratedImages(meetingId: string): Promise<void> {
+  await db.assets
+    .where("meetingId")
+    .equals(meetingId)
+    .filter((asset) => asset.kind === "image" && asset.generated === true)
+    .delete();
+}

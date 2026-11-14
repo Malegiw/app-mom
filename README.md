@@ -6,6 +6,30 @@ Notula adalah aplikasi web yang bisa dipasang (PWA), jadi satu aplikasi yang sam
 
 Buka aplikasinya: <https://malegiw.github.io/app-mom/>
 
+## Mesin Notula: otomatis dengan langganan Claude
+
+Langganan Claude (Pro atau Max) tidak bisa dipakai dari situs web, tetapi bisa dipakai lewat Claude Code di komputer pemiliknya. Mesin Notula adalah program kecil yang berjalan di komputer itu dan mengerjakan tiga hal tanpa kunci API:
+
+- **Mendengarkan dan menyalin**: suara dari mikrofon, Teams, Zoom, Meet, atau YouTube diubah menjadi teks oleh Whisper di komputer itu sendiri. Suara tidak dikirim ke layanan mana pun.
+- **Menyusun notulen**: begitu selesai mendengarkan, Claude Code menyusun notulen dari transkrip, memakai langganan Claude Anda.
+- **Menggambar**: Claude ikut membuat diagram dan infografik untuk notulen, yang masuk ke Word, Excel, dan PowerPoint.
+
+Menjalankannya di Mac:
+
+```bash
+npm start
+```
+
+Lalu buka `http://localhost:8787`. Bisa juga dengan klik dua kali `Notula.command` di Finder.
+
+Yang perlu ada di komputer: [Claude Code](https://code.claude.com) yang sudah masuk ke akun Claude, `whisper.cpp` dan `ffmpeg` (`brew install whisper-cpp ffmpeg`), serta model Whisper di `~/Library/Application Support/Notula/models/ggml-large-v3-turbo.bin`.
+
+Untuk HP dan iPad di Wi-Fi yang sama, jalankan `npm run start:lan`. Alamat dan kode aksesnya tampil di halaman Pengaturan pada komputer. Browser di HP akan memperingatkan soal sertifikat buatan sendiri; pilih lanjutkan.
+
+Mesin hanya menerima permintaan dari komputer itu sendiri, dari situs Notula yang terbit, dan (dalam mode Wi-Fi) dari perangkat yang tahu kode aksesnya. Claude dijalankan tanpa alat apa pun: ia hanya membaca transkrip dan gambar yang dikirim, lalu menjawab.
+
+Pemakaian langganan mengikuti ketentuan Anthropic untuk pemakaian pribadi. Setiap orang memakai mesin dengan langganan Claude miliknya sendiri di komputernya sendiri.
+
 ## Yang bisa dilakukan
 
 - **Merekam rapat** lewat mikrofon, dengan transkrip langsung selama rapat berjalan.
@@ -32,6 +56,8 @@ Perintah lain:
 
 | Perintah | Kegunaan |
 | --- | --- |
+| `npm start` | Membangun aplikasi lalu menjalankan mesin di `http://localhost:8787` |
+| `npm run start:lan` | Sama, dan membuka akses untuk HP dan iPad di Wi-Fi yang sama |
 | `npm run build` | Memeriksa tipe lalu membuat versi siap pasang di `dist/` |
 | `npm run preview` | Menjalankan hasil build secara lokal |
 | `npm test` | Menjalankan pengujian |

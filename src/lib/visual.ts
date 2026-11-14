@@ -231,10 +231,13 @@ export function drawVisualSummary(canvas: HTMLCanvasElement, meeting: Meeting): 
   ctx.fillRect(PAD, H - 58, W - PAD * 2, 2);
   ctx.fillStyle = hex(BRAND.textMuted);
   font(ctx, 20, 400);
-  ctx.fillText(`Dibuat dengan ${APP_CREDIT}`, PAD, H - 24);
+  const credit = `Dibuat dengan ${APP_CREDIT}`;
+  ctx.fillText(credit, PAD, H - 24);
+  // The topic takes whatever room the credit leaves, so the two never run into each other.
+  const creditWidth = ctx.measureText(credit).width;
   if (minutes.topic) {
     ctx.textAlign = "right";
-    ctx.fillText(wrap(ctx, `Topik: ${minutes.topic}`, W - PAD * 2 - 260, 1)[0] ?? "", W - PAD, H - 24);
+    ctx.fillText(wrap(ctx, `Topik: ${minutes.topic}`, W - PAD * 2 - creditWidth - 48, 1)[0] ?? "", W - PAD, H - 24);
     ctx.textAlign = "left";
   }
 }

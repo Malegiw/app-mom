@@ -82,6 +82,8 @@ export interface Asset {
   sessionId?: string;
   /** Audio only: where this recording starts on the meeting's clock, in seconds. */
   offsetSec?: number;
+  /** Pictures only: true when Claude drew it for the minutes, false or absent for pictures the person added. */
+  generated?: boolean;
 }
 
 export const PLATFORM_LABEL: Record<Platform, string> = {

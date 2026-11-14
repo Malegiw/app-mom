@@ -728,6 +728,9 @@ ol.bullets li::marker {
   border-radius: var(--radius-panel);
   background: var(--surface-muted);
 }
+.figure.wide img {
+  aspect-ratio: 16 / 9;
+}
 .figure figcaption {
   color: var(--text-secondary);
   font-size: var(--text-sm);
@@ -847,6 +850,14 @@ ol.bullets li::marker {
 }
 
 /* Settings */
+.settingsSection code {
+  padding: 2px var(--space-2);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
 .settingsSection {
   display: grid;
   gap: var(--space-4);

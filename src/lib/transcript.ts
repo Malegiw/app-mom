@@ -132,6 +132,15 @@ export function mergeSegments(segments: Segment[], maxChars = 700): Segment[] {
   return merged;
 }
 
+/** Turns timed text from a speech engine into transcript paragraphs, shifted by `offset` seconds. */
+export function fromTimedText(items: { start: number; text: string }[], offset = 0): Segment[] {
+  return mergeSegments(
+    items
+      .map((item) => ({ id: uid(), start: Math.round((offset + item.start) * 10) / 10, speaker: "", text: item.text.trim() }))
+      .filter((segment) => segment.text),
+  );
+}
+
 /** Pulls paragraph text out of a .docx (a zip of XML) without a full Word parser. */
 export async function docxToText(data: ArrayBuffer): Promise<string> {
   const { default: JSZip } = await import("jszip");

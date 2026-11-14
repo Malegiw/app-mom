@@ -136,7 +136,7 @@ function picture(image: ExportImage, maxHeight: number): Paragraph {
 const spacer = () => new Paragraph({ spacing: { after: 120 }, children: [] });
 
 export function buildDocx(bundle: ExportBundle): Document {
-  const { meeting, images, visual, organization } = bundle;
+  const { meeting, images, visual, drawings, organization } = bundle;
   const minutes = meeting.minutes;
   const children: (Paragraph | Table)[] = [];
 
@@ -207,25 +207,25 @@ export function buildDocx(bundle: ExportBundle): Document {
     children.push(spacer(), body("Notulen belum dibuat untuk rapat ini. Dokumen ini berisi detail rapat, daftar hadir, dan transkrip.", { italics: true, color: BRAND.textSecondary }));
   }
 
-  if (visual) {
-    children.push(h1("Ringkasan visual"), picture(visual, 380), spacer());
+  const figureCaption = (label: string, image: ExportImage) =>
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 240 },
+      children: [
+        new TextRun({ text: `${label}. `, bold: true, color: BRAND.textSecondary, size: 20 }),
+        new TextRun({ text: image.caption || image.name, italics: true, color: BRAND.textSecondary, size: 20 }),
+      ],
+    });
+
+  if (visual || drawings.length > 0) {
+    children.push(h1("Ringkasan visual"));
+    if (visual) children.push(picture(visual, 380), spacer());
+    drawings.forEach((image, index) => children.push(picture(image, 380), figureCaption(`Ilustrasi ${index + 1}`, image)));
   }
 
   if (images.length > 0) {
     children.push(h1("Dokumentasi"));
-    images.forEach((image, index) => {
-      children.push(picture(image, 400));
-      children.push(
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 240 },
-          children: [
-            new TextRun({ text: `Gambar ${index + 1}. `, bold: true, color: BRAND.textSecondary, size: 20 }),
-            new TextRun({ text: image.caption || image.name, italics: true, color: BRAND.textSecondary, size: 20 }),
-          ],
-        }),
-      );
-    });
+    images.forEach((image, index) => children.push(picture(image, 400), figureCaption(`Gambar ${index + 1}`, image)));
   }
 
   const attendees = namedAttendees(meeting);

@@ -8,10 +8,11 @@ import { ConfirmMorph } from "@/components/arc/confirm-morph/confirm-morph";
 import { Dialog, DialogContent } from "@/components/arc/dialog/dialog";
 import { Input } from "@/components/arc/input/input";
 import { deleteAsset, listAssets, replaceSourceSegments, updateMeeting } from "@/lib/db";
+import { engineTranscribe, useEngine } from "@/lib/engine";
 import { formatClock, formatDuration } from "@/lib/format";
 import { useSettings } from "@/lib/settings";
 import { transcribeAudio } from "@/lib/stt";
-import { uniqueSpeakers, wordCount } from "@/lib/transcript";
+import { fromTimedText, uniqueSpeakers, wordCount } from "@/lib/transcript";
 import type { Asset, Meeting, Segment } from "@/lib/types";
 import { CapturePanel } from "./CapturePanel";
 import type { Recorder } from "./useRecorder";
@@ -217,8 +218,11 @@ function RenameSpeakers({ meeting, speakers, onDone }: { meeting: Meeting; speak
 
 function AudioRow({ audio, meeting }: { audio: Asset; meeting: Meeting }) {
   const settings = useSettings();
+  const engine = useEngine();
+  const viaEngine = engine.state === "ready" && engine.whisper;
   const [url, setUrl] = useState("");
   const [working, setWorking] = useState(false);
+  const [percent, setPercent] = useState(0);
   const [message, setMessage] = useState<{ tone: "danger" | "success"; text: string } | null>(null);
 
   useEffect(() => {
@@ -229,17 +233,28 @@ function AudioRow({ audio, meeting }: { audio: Asset; meeting: Meeting }) {
 
   async function transcribe() {
     setWorking(true);
+    setPercent(0);
     setMessage(null);
     try {
-      const result = await transcribeAudio(audio.blob, { apiKey: settings.elevenLabsKey, language: meeting.language, fileName: audio.name });
-      if (result.segments.length === 0) {
+      const offset = audio.offsetSec ?? 0;
+      let segments;
+      let durationSec;
+      if (viaEngine) {
+        // Whisper on the engine's computer: free and private, without speaker labels.
+        const result = await engineTranscribe(audio.blob, { language: meeting.language, onProgress: (progress) => setPercent(progress.stage === "transcribe" ? progress.percent : 0) });
+        segments = fromTimedText(result.segments, offset);
+        durationSec = result.durationSec;
+      } else {
+        const result = await transcribeAudio(audio.blob, { apiKey: settings.elevenLabsKey, language: meeting.language, fileName: audio.name });
+        segments = result.segments.map((segment) => ({ ...segment, start: segment.start === null ? null : segment.start + offset }));
+        durationSec = result.durationSec;
+      }
+      if (segments.length === 0) {
         setMessage({ tone: "danger", text: "Tidak ada ucapan yang terdeteksi di rekaman ini." });
         return;
       }
-      const offset = audio.offsetSec ?? 0;
-      const shifted = result.segments.map((segment) => ({ ...segment, start: segment.start === null ? null : segment.start + offset }));
-      await replaceSourceSegments(meeting.id, audio.sessionId ?? audio.id, shifted, offset + result.durationSec);
-      setMessage({ tone: "success", text: `${result.segments.length} bagian masuk ke transkrip, lengkap dengan label pembicara.` });
+      await replaceSourceSegments(meeting.id, audio.sessionId ?? audio.id, segments, offset + durationSec);
+      setMessage({ tone: "success", text: `${segments.length} bagian masuk ke transkrip${viaEngine ? "" : ", lengkap dengan label pembicara"}.` });
     } catch (cause) {
       setMessage({ tone: "danger", text: cause instanceof Error ? cause.message : "Transkripsi gagal." });
     } finally {
@@ -256,9 +271,9 @@ function AudioRow({ audio, meeting }: { audio: Asset; meeting: Meeting }) {
         </div>
         {url ? <audio controls preload="metadata" src={url} /> : null}
         <div className="row">
-          {settings.elevenLabsKey ? (
+          {viaEngine || settings.elevenLabsKey ? (
             <Button variant="secondary" size="sm" onClick={() => void transcribe()} loading={working}>
-              Transkripsikan
+              {working && percent > 0 ? `Menyalin ${percent}%` : "Transkripsikan"}
             </Button>
           ) : (
             <Link to="/pengaturan" className="small">

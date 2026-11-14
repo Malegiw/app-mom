@@ -114,7 +114,7 @@ function cols(...shares: number[]): number[] {
 }
 
 export function buildPptx(bundle: ExportBundle): PptxGenJS {
-  const { meeting, images, visual, organization } = bundle;
+  const { meeting, images, visual, drawings, organization } = bundle;
   const minutes = meeting.minutes;
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
@@ -253,10 +253,23 @@ export function buildPptx(bundle: ExportBundle): PptxGenJS {
     addPicture(slide, visual, { x: LEFT, y: BODY_TOP, w: CONTENT_W, h: BODY_H });
   }
 
-  images.forEach((image, index) => {
-    const slide = contentSlide(pptx, images.length > 1 ? `Dokumentasi ${index + 1}` : "Dokumentasi");
+  const captioned = (title: string, image: ExportImage, text: string) => {
+    const slide = contentSlide(pptx, title);
     addPicture(slide, image, { x: LEFT, y: BODY_TOP, w: CONTENT_W, h: BODY_H - 0.6 });
-    slide.addText(image.caption || image.name, {
+    return { slide, text };
+  };
+
+  // A drawing's caption starts with its title, which becomes the slide title.
+  const pictureSlides = [
+    ...drawings.map((image, index) => {
+      const [title, ...rest] = (image.caption || `Ilustrasi ${index + 1}`).split(". ");
+      return captioned(title, image, rest.join(". ") || title);
+    }),
+    ...images.map((image, index) => captioned(images.length > 1 ? `Dokumentasi ${index + 1}` : "Dokumentasi", image, image.caption || image.name)),
+  ];
+
+  pictureSlides.forEach(({ slide, text }) => {
+    slide.addText(text, {
       x: LEFT,
       y: BODY_TOP + BODY_H - 0.5,
       w: CONTENT_W,

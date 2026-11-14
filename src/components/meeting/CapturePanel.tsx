@@ -10,26 +10,28 @@ import { Switch } from "@/components/arc/switch/switch";
 import { TextShimmer } from "@/components/arc/text-shimmer/text-shimmer";
 import { Textarea } from "@/components/arc/textarea/textarea";
 import { addAsset, appendSegments, replaceSourceSegments } from "@/lib/db";
+import { engineTranscribe, getEngine, useEngine } from "@/lib/engine";
 import { formatClock } from "@/lib/format";
 import { canCaptureOnlineAudio, canRecord, type AudioSource } from "@/lib/recorder";
-import { getSettings, useSettings } from "@/lib/settings";
+import { getSettings, saveSettings, useSettings } from "@/lib/settings";
 import { speechSupported } from "@/lib/speech";
 import { transcribeAudio } from "@/lib/stt";
-import { docxToText, lastTimestamp, parseTranscript } from "@/lib/transcript";
+import { docxToText, fromTimedText, lastTimestamp, parseTranscript } from "@/lib/transcript";
 import type { Meeting } from "@/lib/types";
-import type { Recorder } from "./useRecorder";
+import { pickProvider } from "./useMinutesGenerator";
+import type { LiveMode, Recorder } from "./useRecorder";
 
 type Mode = "record" | "import" | "paste";
 
 const MODES = [
-  { value: "record", label: "Rekam" },
+  { value: "record", label: "Dengarkan" },
   { value: "import", label: "Impor berkas" },
   { value: "paste", label: "Tempel teks" },
 ];
 
 const IMPORT_ACCEPT = ".vtt,.srt,.txt,.docx,audio/*,video/*,.mp3,.m4a,.wav,.mp4,.webm,.ogg";
 
-/** Three ways to get words into the transcript: record now, import a file, or paste text. */
+/** Three ways to get words into the transcript: listen now, import a file, or paste text. */
 export function CapturePanel({ meeting, recorder }: { meeting: Meeting; recorder: Recorder }) {
   const [mode, setMode] = useState<Mode>("record");
   const busy = recorder.status !== "idle";
@@ -43,12 +45,20 @@ export function CapturePanel({ meeting, recorder }: { meeting: Meeting; recorder
 }
 
 function RecordMode({ meeting, recorder }: { meeting: Meeting; recorder: Recorder }) {
-  const onlineAvailable = canCaptureOnlineAudio();
-  const captionsAvailable = speechSupported();
-  const [source, setSource] = useState<AudioSource>(meeting.platform !== "offline" && onlineAvailable ? "online" : "mic");
-  const [live, setLive] = useState(captionsAvailable);
+  const engine = useEngine();
+  const settings = useSettings();
+  const sharedAudio = canCaptureOnlineAudio();
+  const engineLive = engine.state === "ready" && engine.whisper;
+  const [source, setSource] = useState<AudioSource>(meeting.platform !== "offline" && sharedAudio ? "online" : "mic");
+  const [liveOn, setLiveOn] = useState(true);
   const idle = recorder.status === "idle";
   const recording = recorder.status === "recording";
+
+  // The engine hears whatever is recorded. The browser's own captions hear the microphone only.
+  const browserLive = speechSupported() && source !== "system";
+  const liveAvailable = engineLive || browserLive;
+  const live: LiveMode = !liveOn ? "off" : engineLive ? "engine" : browserLive ? "browser" : "off";
+  const autoMinutes = pickProvider(engine, settings) === "engine";
 
   if (!canRecord()) {
     return (
@@ -60,13 +70,33 @@ function RecordMode({ meeting, recorder }: { meeting: Meeting; recorder: Recorde
 
   const sourceOptions = [
     { value: "mic", label: "Mikrofon perangkat ini" },
-    ...(onlineAvailable ? [{ value: "online", label: "Audio rapat online dan mikrofon" }] : []),
+    ...(sharedAudio
+      ? [
+          { value: "online", label: "Audio komputer dan mikrofon (Teams, Zoom, Meet)" },
+          { value: "system", label: "Audio komputer saja (YouTube, webinar)" },
+        ]
+      : []),
   ];
+
+  const status =
+    recorder.status === "paused"
+      ? "Dijeda."
+      : recorder.status === "saving"
+        ? recorder.backlog > 0
+          ? "Menyelesaikan transkrip."
+          : "Menyimpan rekaman."
+        : recorder.liveMode === "engine"
+          ? recorder.backlog > 0
+            ? "Menyalin ucapan menjadi teks."
+            : "Mendengarkan."
+          : recorder.liveMode === "browser"
+            ? recorder.interim || "Mendengarkan."
+            : "Merekam audio.";
 
   return (
     <div className="stack">
       {recorder.error ? (
-        <Alert tone="danger" title="Perekaman tidak bisa dimulai">
+        <Alert tone="danger" title="Belum bisa mulai mendengarkan">
           {recorder.error}
         </Alert>
       ) : null}
@@ -79,22 +109,16 @@ function RecordMode({ meeting, recorder }: { meeting: Meeting; recorder: Recorde
       <div className="recorder">
         {idle || recorder.status === "starting" ? (
           <>
-            <button
-              type="button"
-              className="recordButton"
-              disabled={recorder.status === "starting"}
-              onClick={() => void recorder.start({ source, live: live && captionsAvailable })}
-              aria-label="Mulai merekam"
-            >
+            <button type="button" className="recordButton" disabled={recorder.status === "starting"} onClick={() => void recorder.start({ source, live })} aria-label="Mulai mendengarkan">
               <Mic size={34} strokeWidth={2} aria-hidden="true" />
             </button>
             {recorder.status === "starting" ? (
-              <TextShimmer>Menunggu izin mikrofon</TextShimmer>
+              <TextShimmer>Menunggu izin</TextShimmer>
             ) : (
               <p className="muted">
-                {source === "online"
-                  ? "Ketuk untuk mulai. Pilih tab atau jendela rapat, lalu centang berbagi audio."
-                  : "Ketuk untuk mulai merekam. Letakkan perangkat dekat para pembicara."}
+                {source === "mic"
+                  ? "Ketuk untuk mulai. Letakkan perangkat dekat para pembicara."
+                  : "Ketuk untuk mulai. Pilih tab (YouTube, Teams web) atau Seluruh layar (aplikasi Teams, Zoom), lalu nyalakan Bagikan audio."}
               </p>
             )}
           </>
@@ -105,11 +129,7 @@ function RecordMode({ meeting, recorder }: { meeting: Meeting; recorder: Recorde
             </div>
             <LevelMeter recorder={recorder} />
             <p className="interim" aria-live="off">
-              {recorder.status === "paused"
-                ? "Rekaman dijeda."
-                : recorder.status === "saving"
-                  ? "Menyimpan rekaman."
-                  : recorder.interim || (recorder.liveCaptions ? "Mendengarkan." : "Merekam audio.")}
+              {status}
             </p>
             <div className="row" style={{ justifyContent: "center" }}>
               {recording ? (
@@ -125,7 +145,7 @@ function RecordMode({ meeting, recorder }: { meeting: Meeting; recorder: Recorde
               )}
               <Button className="tone-orange" onClick={() => void recorder.stop()} loading={recorder.status === "saving"}>
                 <Square size={16} strokeWidth={2} aria-hidden="true" />
-                Selesai merekam
+                {autoMinutes && settings.autoMinutes ? "Selesai dan buat notulen" : "Selesai"}
               </Button>
             </div>
           </>
@@ -139,9 +159,9 @@ function RecordMode({ meeting, recorder }: { meeting: Meeting; recorder: Recorde
               <Select
                 label="Sumber suara"
                 description={
-                  onlineAvailable
-                    ? "Untuk Teams, Zoom, atau Meet di komputer, pilih audio rapat online agar suara peserta lain ikut terekam."
-                    : "Di ponsel dan tablet, Notula merekam lewat mikrofon. Untuk rapat online, nyalakan pengeras suara."
+                  sharedAudio
+                    ? "Untuk rapat online atau video, pilih audio komputer agar suara dari Teams, Zoom, atau YouTube ikut terdengar."
+                    : "Di ponsel dan tablet, Notula mendengar lewat mikrofon. Untuk rapat online, nyalakan pengeras suara."
                 }
                 options={sourceOptions}
                 value={source}
@@ -153,20 +173,39 @@ function RecordMode({ meeting, recorder }: { meeting: Meeting; recorder: Recorde
             <div className="optionText">
               <strong id="opt-live">Transkrip langsung</strong>
               <p>
-                {captionsAvailable
-                  ? "Ucapan yang tertangkap mikrofon langsung menjadi teks selama rapat. Gratis, memakai layanan suara bawaan browser."
-                  : "Browser ini tidak punya transkripsi bawaan. Rekaman tetap tersimpan dan bisa ditranskripsikan setelah rapat."}
+                {engineLive
+                  ? "Ucapan menjadi teks beberapa detik setelah terdengar, dikerjakan Whisper di komputer mesin. Berlaku untuk mikrofon maupun audio komputer."
+                  : browserLive
+                    ? source === "online"
+                      ? "Memakai layanan suara bawaan browser, yang hanya mendengar mikrofon. Audio komputer tetap terekam dan bisa ditranskripsikan setelahnya."
+                      : "Ucapan yang tertangkap mikrofon langsung menjadi teks, memakai layanan suara bawaan browser."
+                    : "Belum tersedia di sini. Rekaman tetap tersimpan dan bisa ditranskripsikan setelah selesai."}
               </p>
             </div>
-            <Switch aria-labelledby="opt-live" checked={live && captionsAvailable} onCheckedChange={setLive} disabled={!captionsAvailable} />
+            <Switch aria-labelledby="opt-live" checked={liveOn && liveAvailable} onCheckedChange={setLiveOn} disabled={!liveAvailable} />
           </div>
+          {autoMinutes ? (
+            <div className="optionRow">
+              <div className="optionText">
+                <strong id="opt-auto">Notulen otomatis</strong>
+                <p>Begitu selesai mendengarkan, Claude langsung menyusun notulen{settings.makeVisuals ? " beserta gambarnya" : ""} lewat langganan Anda.</p>
+              </div>
+              <Switch aria-labelledby="opt-auto" checked={settings.autoMinutes} onCheckedChange={(checked) => saveSettings({ autoMinutes: checked })} />
+            </div>
+          ) : null}
         </div>
+      ) : null}
+
+      {idle && engine.state !== "ready" ? (
+        <p className="muted small">
+          Mesin Notula belum terhubung, jadi transkrip audio komputer dan notulen otomatis belum aktif. Cara menyalakannya ada di <Link to="/pengaturan">Pengaturan</Link>.
+        </p>
       ) : null}
     </div>
   );
 }
 
-/** A row of bars that follows the input level, so it is obvious the microphone is picking up sound. */
+/** A row of bars that follows the input level, so it is obvious that sound is coming in. */
 function LevelMeter({ recorder }: { recorder: Recorder }) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -199,6 +238,8 @@ function LevelMeter({ recorder }: { recorder: Recorder }) {
 
 function ImportMode({ meeting }: { meeting: Meeting }) {
   const settings = useSettings();
+  const engine = useEngine();
+  const viaEngine = engine.state === "ready" && engine.whisper;
 
   const upload: FileDropzoneUpload = async (item, { onProgress, signal }) => {
     const file = item.file;
@@ -223,13 +264,24 @@ function ImportMode({ meeting }: { meeting: Meeting }) {
     }
 
     if (file.type.startsWith("audio/") || file.type.startsWith("video/") || /\.(mp3|m4a|wav|mp4|webm|ogg|mov|aac|flac)$/.test(name)) {
-      const apiKey = getSettings().elevenLabsKey;
-      if (!apiKey) throw new Error("Isi kunci API ElevenLabs di Pengaturan untuk mentranskripsikan audio.");
-      const result = await transcribeAudio(file, { apiKey, language: meeting.language, fileName: file.name, signal });
-      onProgress(80);
-      if (result.segments.length === 0) throw new Error("Tidak ada ucapan yang terdeteksi di berkas ini.");
+      let segments;
+      let durationSec;
+      const current = getEngine();
+      if (current.state === "ready" && current.whisper) {
+        const result = await engineTranscribe(file, { language: meeting.language, signal, onProgress: (progress) => onProgress(progress.stage === "transcribe" ? 15 + Math.round(progress.percent * 0.8) : 12) });
+        segments = fromTimedText(result.segments);
+        durationSec = result.durationSec;
+      } else {
+        const apiKey = getSettings().elevenLabsKey;
+        if (!apiKey) throw new Error("Nyalakan mesin Notula di komputer untuk mentranskripsikan audio, atau isi kunci ElevenLabs di Pengaturan.");
+        const result = await transcribeAudio(file, { apiKey, language: meeting.language, fileName: file.name, signal });
+        segments = result.segments;
+        durationSec = result.durationSec;
+      }
+      onProgress(96);
+      if (segments.length === 0) throw new Error("Tidak ada ucapan yang terdeteksi di berkas ini.");
       const asset = await addAsset({ meetingId: meeting.id, kind: "audio", name: file.name, mime: file.type || "audio/mpeg", blob: file, caption: "", width: 0, height: 0, offsetSec: 0 });
-      await replaceSourceSegments(meeting.id, asset.id, result.segments, result.durationSec);
+      await replaceSourceSegments(meeting.id, asset.id, segments, durationSec);
       onProgress(100);
       return;
     }
@@ -247,9 +299,12 @@ function ImportMode({ meeting }: { meeting: Meeting }) {
         note="Transkrip Teams, Zoom, atau Meet (.vtt, .docx, .srt, .txt), atau rekaman audio dan video"
         onUpload={upload}
       />
-      {!settings.elevenLabsKey ? (
+      {viaEngine ? (
+        <p className="muted small">Rekaman audio dan video ditranskripsikan oleh Whisper di komputer mesin, tanpa kunci API.</p>
+      ) : !settings.elevenLabsKey ? (
         <p className="muted small">
-          Transkrip dari Teams, Zoom, dan Meet langsung bisa diimpor. Untuk mengubah rekaman audio atau video menjadi teks, isi kunci API ElevenLabs di <Link to="/pengaturan">Pengaturan</Link>.
+          Transkrip dari Teams, Zoom, dan Meet langsung bisa diimpor. Untuk mengubah rekaman audio atau video menjadi teks, nyalakan mesin Notula di komputer (lihat{" "}
+          <Link to="/pengaturan">Pengaturan</Link>).
         </p>
       ) : null}
     </div>

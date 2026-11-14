@@ -10,7 +10,24 @@ export interface Settings {
   language: Lang;
   organization: string;
   notetaker: string;
+  /** Address of the Notula engine. Empty means "find it automatically". */
+  engineUrl: string;
+  /** Access code for an engine reached over Wi-Fi. */
+  engineCode: string;
+  /** Which Claude model the engine asks Claude Code for. Empty means Claude Code's own default. */
+  engineModel: string;
+  /** Build the minutes as soon as a recording ends. */
+  autoMinutes: boolean;
+  /** Ask Claude to draw pictures for the minutes. */
+  makeVisuals: boolean;
 }
+
+export const ENGINE_MODEL_OPTIONS = [
+  { value: "default", label: "Bawaan Claude Code" },
+  { value: "sonnet", label: "Sonnet (lebih hemat kuota)" },
+  { value: "opus", label: "Opus (paling teliti)" },
+  { value: "haiku", label: "Haiku (paling cepat)" },
+];
 
 export const MODEL_OPTIONS = [
   { value: "claude-opus-5-5", label: "Claude Opus 5.5 (paling teliti)" },
@@ -25,6 +42,11 @@ const DEFAULTS: Settings = {
   language: "id",
   organization: "",
   notetaker: "",
+  engineUrl: "",
+  engineCode: "",
+  engineModel: "default",
+  autoMinutes: true,
+  makeVisuals: true,
 };
 
 const KEY = "notula.settings.v1";

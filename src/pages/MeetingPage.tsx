@@ -15,13 +15,14 @@ import { ImagesTab } from "@/components/meeting/ImagesTab";
 import { MeetingDetailsDialog } from "@/components/meeting/MeetingDetailsDialog";
 import { MinutesTab } from "@/components/meeting/MinutesTab";
 import { TranscriptTab } from "@/components/meeting/TranscriptTab";
-import { useMinutesGenerator } from "@/components/meeting/useMinutesGenerator";
+import { pickProvider, useMinutesGenerator } from "@/components/meeting/useMinutesGenerator";
 import { useRecorder } from "@/components/meeting/useRecorder";
 import { useToast } from "@/components/Toaster";
 import { db, deleteMeeting } from "@/lib/db";
+import { getEngine, useEngine } from "@/lib/engine";
 import { EXPORT_INFO, type ExportKind } from "@/lib/export";
 import { formatClock, formatDate, formatDuration, formatTimeRange } from "@/lib/format";
-import { useSettings } from "@/lib/settings";
+import { getSettings, useSettings } from "@/lib/settings";
 import { PLATFORM_LABEL, type Meeting } from "@/lib/types";
 
 const TABS = ["notulen", "transkrip", "peserta", "gambar"] as const;
@@ -62,18 +63,28 @@ function MeetingWorkspace({ meeting }: { meeting: Meeting }) {
   const navigate = useNavigate();
   const notify = useToast();
   const settings = useSettings();
+  const engine = useEngine();
   const [params, setParams] = useSearchParams();
-  const recorder = useRecorder(meeting);
   const generator = useMinutesGenerator(meeting);
+  const openTab = (next: string) => setParams({ tab: next }, { replace: true });
+  // The automatic path: when listening ends and there is a transcript, Claude writes the minutes right away.
+  const recorder = useRecorder(meeting, (recording) => {
+    const current = getSettings();
+    if (!current.autoMinutes || pickProvider(getEngine(), current) !== "engine") return;
+    void db.meetings.get(recording.meetingId).then((saved) => {
+      if (!saved || saved.segments.length === 0) return;
+      openTab("notulen");
+      void generator.generate();
+    });
+  });
   const exporter = useExporter(meeting);
   const [editingDetails, setEditingDetails] = useState(false);
 
   const requested = params.get("tab") as TabId | null;
   const tab: TabId = requested && TABS.includes(requested) ? requested : meeting.segments.length === 0 && !meeting.minutes ? "transkrip" : "notulen";
-  const openTab = (next: string) => setParams({ tab: next }, { replace: true });
 
   const recordingNow = recorder.status === "recording" || recorder.status === "paused" || recorder.status === "saving";
-  const hasKey = settings.anthropicKey.trim().length > 0;
+  const hasKey = pickProvider(engine, settings) !== null;
   const canSummarize = meeting.segments.length > 0 && !recordingNow;
   const timeRange = formatTimeRange(meeting);
 

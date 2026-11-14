@@ -4,8 +4,19 @@
     {
       "name": "notula-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 5173
+    },
+    {
+      "name": "notula-engine",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "engine/server.mjs"
+      ],
+      "port": 8787
     }
   ]
 }
