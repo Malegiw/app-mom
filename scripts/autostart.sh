@@ -36,6 +36,7 @@ case "${1:-status}" in
 </plist>
 PLIST
     launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    sleep 2
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     echo "Mesin Notula akan menyala otomatis setiap kali Mac ini masuk. Log: $LOGDIR/engine.log"
     ;;
