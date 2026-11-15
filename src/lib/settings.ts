@@ -18,6 +18,8 @@ export interface Settings {
   engineModel: string;
   /** Build the minutes as soon as a recording ends. */
   autoMinutes: boolean;
+  /** Reduce imported videos to their audio before upload and storage. */
+  importAudioOnly: boolean;
   /** Ask Claude to draw pictures for the minutes. */
   makeVisuals: boolean;
 }
@@ -46,6 +48,7 @@ const DEFAULTS: Settings = {
   engineCode: "",
   engineModel: "default",
   autoMinutes: true,
+  importAudioOnly: true,
   makeVisuals: true,
 };
 

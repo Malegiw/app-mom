@@ -1,22 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Mic, Pause, Play, Square } from "lucide-react";
+import { Mic, Pause, Play, Square, Upload } from "lucide-react";
 import { Alert } from "@/components/arc/alert/alert";
 import { Button } from "@/components/arc/button/button";
-import { FileDropzone, type FileDropzoneUpload } from "@/components/arc/file-dropzone/file-dropzone";
+import { Progress } from "@/components/arc/progress/progress";
 import SegmentedControl from "@/components/arc/segmented-control/segmented-control";
 import { Select } from "@/components/arc/select/select";
 import { Switch } from "@/components/arc/switch/switch";
 import { TextShimmer } from "@/components/arc/text-shimmer/text-shimmer";
 import { Textarea } from "@/components/arc/textarea/textarea";
-import { addAsset, appendSegments, replaceSourceSegments } from "@/lib/db";
-import { engineTranscribe, getEngine, useEngine } from "@/lib/engine";
+import { appendSegments } from "@/lib/db";
+import { useEngine } from "@/lib/engine";
+import { cancelImport, clearImport, startImport, useImportJobs } from "@/lib/importJobs";
 import { formatClock } from "@/lib/format";
 import { canCaptureOnlineAudio, canRecord, type AudioSource } from "@/lib/recorder";
 import { getSettings, saveSettings, useSettings } from "@/lib/settings";
 import { speechSupported } from "@/lib/speech";
-import { transcribeAudio } from "@/lib/stt";
-import { docxToText, fromTimedText, lastTimestamp, parseTranscript } from "@/lib/transcript";
+import { lastTimestamp, parseTranscript } from "@/lib/transcript";
 import type { Meeting } from "@/lib/types";
 import { pickProvider } from "./useMinutesGenerator";
 import type { LiveMode, Recorder } from "./useRecorder";
@@ -29,7 +29,7 @@ const MODES = [
   { value: "paste", label: "Tempel teks" },
 ];
 
-const IMPORT_ACCEPT = ".vtt,.srt,.txt,.docx,audio/*,video/*,.mp3,.m4a,.wav,.mp4,.webm,.ogg";
+const IMPORT_ACCEPT = ".vtt,.srt,.txt,.docx,audio/*,video/*,.mp3,.m4a,.wav,.mp4,.mov,.mkv,.webm,.ogg";
 
 /** Three ways to get words into the transcript: listen now, import a file, or paste text. */
 export function CapturePanel({ meeting, recorder }: { meeting: Meeting; recorder: Recorder }) {
@@ -240,65 +240,98 @@ function ImportMode({ meeting }: { meeting: Meeting }) {
   const settings = useSettings();
   const engine = useEngine();
   const viaEngine = engine.state === "ready" && engine.whisper;
+  const jobs = useImportJobs(meeting.id);
+  const picker = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
 
-  const upload: FileDropzoneUpload = async (item, { onProgress, signal }) => {
-    const file = item.file;
-    if (!file) throw new Error("Berkas tidak terbaca.");
-    const name = file.name.toLowerCase();
-    onProgress(10);
-
-    if (/\.(vtt|srt|txt|md)$/.test(name) || file.type.startsWith("text/")) {
-      const segments = parseTranscript(await file.text());
-      if (segments.length === 0) throw new Error("Berkas ini tidak berisi teks yang bisa dibaca.");
-      await appendSegments(meeting.id, segments, lastTimestamp(segments));
-      onProgress(100);
-      return;
-    }
-
-    if (name.endsWith(".docx")) {
-      const segments = parseTranscript(await docxToText(await file.arrayBuffer()), { nameOnOwnLine: true });
-      if (segments.length === 0) throw new Error("Dokumen ini tidak berisi teks yang bisa dibaca.");
-      await appendSegments(meeting.id, segments, lastTimestamp(segments));
-      onProgress(100);
-      return;
-    }
-
-    if (file.type.startsWith("audio/") || file.type.startsWith("video/") || /\.(mp3|m4a|wav|mp4|webm|ogg|mov|aac|flac)$/.test(name)) {
-      let segments;
-      let durationSec;
-      const current = getEngine();
-      if (current.state === "ready" && current.whisper) {
-        const result = await engineTranscribe(file, { language: meeting.language, signal, onProgress: (progress) => onProgress(progress.stage === "transcribe" ? 15 + Math.round(progress.percent * 0.8) : 12) });
-        segments = fromTimedText(result.segments);
-        durationSec = result.durationSec;
-      } else {
-        const apiKey = getSettings().elevenLabsKey;
-        if (!apiKey) throw new Error("Nyalakan mesin Notula di komputer untuk mentranskripsikan audio, atau isi kunci ElevenLabs di Pengaturan.");
-        const result = await transcribeAudio(file, { apiKey, language: meeting.language, fileName: file.name, signal });
-        segments = result.segments;
-        durationSec = result.durationSec;
-      }
-      onProgress(96);
-      if (segments.length === 0) throw new Error("Tidak ada ucapan yang terdeteksi di berkas ini.");
-      const asset = await addAsset({ meetingId: meeting.id, kind: "audio", name: file.name, mime: file.type || "audio/mpeg", blob: file, caption: "", width: 0, height: 0, offsetSec: 0 });
-      await replaceSourceSegments(meeting.id, asset.id, segments, durationSec);
-      onProgress(100);
-      return;
-    }
-
-    throw new Error("Jenis berkas ini belum didukung.");
-  };
+  function add(files: FileList | File[]) {
+    const { importAudioOnly } = getSettings();
+    for (const file of Array.from(files)) startImport(meeting.id, file, { language: meeting.language, audioOnly: importAudioOnly });
+  }
 
   return (
     <div className="stack">
-      <FileDropzone
-        accept={IMPORT_ACCEPT}
-        maxFiles={5}
-        label="Impor transkrip atau rekaman"
-        description="Letakkan berkas di sini atau pilih dari perangkat"
-        note="Transkrip Teams, Zoom, atau Meet (.vtt, .docx, .srt, .txt), atau rekaman audio dan video"
-        onUpload={upload}
-      />
+      <div
+        className={`importDrop${over ? " over" : ""}`}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setOver(false);
+          add(event.dataTransfer.files);
+        }}
+      >
+        <Upload size={28} strokeWidth={1.75} aria-hidden="true" />
+        <strong>Impor transkrip atau rekaman</strong>
+        <p className="muted small">Transkrip Teams, Zoom, atau Meet (.vtt, .docx, .srt, .txt), atau rekaman audio dan video</p>
+        <Button className="tone-blue" onClick={() => picker.current?.click()}>
+          Pilih berkas
+        </Button>
+        <input
+          ref={picker}
+          type="file"
+          accept={IMPORT_ACCEPT}
+          multiple
+          hidden
+          onChange={(event) => {
+            if (event.target.files) add(event.target.files);
+            event.target.value = "";
+          }}
+        />
+      </div>
+
+      <div className="group">
+        <div className="optionRow">
+          <div className="optionText">
+            <strong id="opt-audio">Ambil audionya saja dari video</strong>
+            <p>
+              Rekaman Teams berukuran ratusan megabita, padahal yang dibutuhkan hanya suaranya. Dengan ini, video diubah menjadi audio kecil (sekitar 20 MB per jam) sebelum dikirim dan disimpan. Matikan bila video aslinya ingin disimpan juga.
+            </p>
+          </div>
+          <Switch aria-labelledby="opt-audio" checked={settings.importAudioOnly} onCheckedChange={(checked) => saveSettings({ importAudioOnly: checked })} />
+        </div>
+      </div>
+
+      {jobs.length > 0 ? (
+        <ul className="importJobs" aria-live="polite">
+          {jobs.map((job) => (
+            <li key={job.id} className={`importJob ${job.status}`}>
+              <div className="importJobHead">
+                <strong title={job.name}>{job.name}</strong>
+                <span className="muted small">{formatBytes(job.size)}{job.keptBytes ? ` → ${formatBytes(job.keptBytes)}` : ""}</span>
+              </div>
+              {job.status === "working" ? (
+                <>
+                  <Progress value={job.percent} label={job.step} showValue />
+                  <p className="muted small">Boleh pindah tab. Impor tetap berjalan selama Notula terbuka.</p>
+                  <Button variant="secondary" size="sm" onClick={() => cancelImport(job.id)}>
+                    Batalkan
+                  </Button>
+                </>
+              ) : job.status === "done" ? (
+                <p className="small" role="status">
+                  Selesai. Transkrip sudah ditambahkan, lihat di tab Transkrip.
+                </p>
+              ) : (
+                <>
+                  <p className="small" role={job.status === "failed" ? "alert" : undefined}>
+                    {job.status === "failed" ? job.error : "Dibatalkan."}
+                  </p>
+                </>
+              )}
+              {job.status !== "working" ? (
+                <Button variant="ghost" size="sm" onClick={() => clearImport(job.id)}>
+                  Tutup
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       {viaEngine ? (
         <p className="muted small">Rekaman audio dan video ditranskripsikan oleh Whisper di komputer mesin, tanpa kunci API.</p>
       ) : !settings.elevenLabsKey ? (
@@ -309,6 +342,12 @@ function ImportMode({ meeting }: { meeting: Meeting }) {
       ) : null}
     </div>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${Math.round(bytes / 1024 / 1024)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
 function PasteMode({ meeting }: { meeting: Meeting }) {

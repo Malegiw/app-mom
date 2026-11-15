@@ -906,3 +906,54 @@ ol.bullets li::marker {
 .manual[open] > summary {
   margin-bottom: var(--space-3);
 }
+
+.importDrop {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+  text-align: center;
+  border: 1.5px dashed var(--border);
+  border-radius: 20px;
+  color: var(--text-secondary);
+}
+.importDrop.over {
+  border-color: #0f4c81;
+  background: color-mix(in srgb, #0f4c81 8%, transparent);
+}
+.importDrop strong {
+  color: var(--foreground);
+}
+.importJobs {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.importJob {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+.importJob > * {
+  min-width: 0;
+}
+.importJob .arc-progress,
+.importJob [role="progressbar"] {
+  width: 100%;
+}
+.importJobHead {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  width: 100%;
+}
+.importJobHead strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
