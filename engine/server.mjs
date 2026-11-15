@@ -8,6 +8,8 @@
  *
  * By default it listens on this computer only. With --lan it also listens on the local network
  * over HTTPS, behind an access code, so a phone or tablet on the same Wi-Fi can use it.
+ * With --tailscale it also answers requests that arrive through Tailscale (`tailscale serve`),
+ * again behind the access code, so a phone or tablet can use it from anywhere.
  */
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -22,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { loadCertificate } from "./cert.mjs";
 import { claudeStatus, lastKnownUsage, runClaude } from "./claude.mjs";
 import { LAN_PORT, lanAddresses, loadAccessCode, localHostname, PORT, PUBLISHED_ORIGINS } from "./config.mjs";
+import { tailscaleHosts } from "./tailscale.mjs";
 import { transcribeFile, warmUp, whisperStatus } from "./whisper.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -29,7 +32,9 @@ const DIST = path.join(ROOT, "dist");
 const VERSION = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
 const LAN = process.argv.includes("--lan") || process.env.NOTULA_LAN === "1";
 const TMP = mkdtempSync(path.join(os.tmpdir(), "notula-"));
-const ACCESS_CODE = LAN ? loadAccessCode() : "";
+const TAILSCALE = process.argv.includes("--tailscale") || process.env.NOTULA_TAILSCALE === "1";
+const TS_HOSTS = new Set(TAILSCALE ? await tailscaleHosts() : []);
+const ACCESS_CODE = LAN || TAILSCALE ? loadAccessCode() : "";
 
 const MAX_AUDIO_BYTES = 2 * 1024 ** 3;
 const MAX_JSON_BYTES = 64 * 1024 ** 2;
@@ -57,12 +62,13 @@ const networkNames = () => new Set([localHostname().toLowerCase(), os.hostname()
  * stops a hostile page from pointing its own domain name at this machine, and checking Origin stops
  * other sites from calling the engine at all.
  */
-function hostAllowed(req, lan) {
+function hostAllowed(req, mode) {
   const name = hostnameOf(req.headers.host);
-  return LOOPBACK.has(name) || (lan && networkNames().has(name));
+  if (mode === "tailscale") return TS_HOSTS.has(name);
+  return LOOPBACK.has(name) || (mode === "lan" && networkNames().has(name));
 }
 
-function originAllowed(origin, lan) {
+function originAllowed(origin, mode) {
   if (PUBLISHED_ORIGINS.includes(origin)) return true;
   let url;
   try {
@@ -73,7 +79,8 @@ function originAllowed(origin, lan) {
   // Pages served from this computer: the engine itself, or a development server.
   if (url.protocol === "http:" && LOOPBACK.has(url.hostname)) return true;
   // The app as this engine serves it over Wi-Fi.
-  return lan && url.protocol === "https:" && networkNames().has(url.hostname) && Number(url.port) === LAN_PORT;
+  if (mode === "tailscale") return url.protocol === "https:" && TS_HOSTS.has(url.hostname);
+  return mode === "lan" && url.protocol === "https:" && networkNames().has(url.hostname) && Number(url.port) === LAN_PORT;
 }
 
 function codeMatches(header = "") {
@@ -207,7 +214,8 @@ async function handleClaude(req, res) {
 }
 
 function lanUrls() {
-  return [`https://${localHostname()}:${LAN_PORT}`, ...lanAddresses().map((address) => `https://${address}:${LAN_PORT}`)];
+  const wifi = LAN ? [`https://${localHostname()}:${LAN_PORT}`, ...lanAddresses().map((address) => `https://${address}:${LAN_PORT}`)] : [];
+  return [...[...TS_HOSTS].map((host) => `https://${host}`), ...wifi];
 }
 
 async function handleHealth(res, { authorized }) {
@@ -216,7 +224,7 @@ async function handleHealth(res, { authorized }) {
     sendJson(res, 200, base);
     return;
   }
-  sendJson(res, 200, { ...base, whisper: whisperStatus(), claude: await claudeStatus(), usage: lastKnownUsage(), lan: { enabled: LAN } });
+  sendJson(res, 200, { ...base, whisper: whisperStatus(), claude: await claudeStatus(), usage: lastKnownUsage(), lan: { enabled: LAN || TAILSCALE } });
 }
 
 /**
@@ -268,10 +276,11 @@ function serveStatic(req, res, url) {
   else createReadStream(file).pipe(res);
 }
 
-function makeHandler({ lan }) {
+function makeHandler(mode) {
+  const lan = mode !== "local";
   return async (req, res) => {
     try {
-      if (!hostAllowed(req, lan)) {
+      if (!hostAllowed(req, mode)) {
         res.writeHead(421, { "content-type": "text/plain; charset=utf-8" });
         res.end("Alamat ini bukan milik mesin Notula.\n");
         return;
@@ -281,7 +290,7 @@ function makeHandler({ lan }) {
       const origin = req.headers.origin;
 
       if (origin) {
-        if (!originAllowed(origin, lan)) {
+        if (!originAllowed(origin, mode)) {
           sendJson(res, 403, { error: "Situs ini tidak diizinkan memakai mesin Notula." });
           return;
         }
@@ -310,7 +319,9 @@ function makeHandler({ lan }) {
       }
 
       // Over Wi-Fi every request needs the access code. On this computer itself, none is needed.
-      const address = req.socket.remoteAddress ?? "";
+      // Behind `tailscale serve` every request comes from this computer, so the real sender is in X-Forwarded-For.
+      const forwarded = mode === "tailscale" ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim() : "";
+      const address = forwarded || (req.socket.remoteAddress ?? "");
       let authorized = !lan;
       if (lan) {
         if (tooManyFailures(address)) {
@@ -332,7 +343,7 @@ function makeHandler({ lan }) {
       if (url.pathname === "/api/pairing" && req.method === "GET") {
         // Shown in the app's settings on this computer, so a phone can be paired without the terminal.
         if (lan) sendJson(res, 403, { error: "Hanya tersedia di komputer mesin." });
-        else sendJson(res, 200, { enabled: LAN, code: ACCESS_CODE, urls: LAN ? lanUrls() : [] });
+        else sendJson(res, 200, { enabled: LAN || TAILSCALE, code: ACCESS_CODE, urls: lanUrls() });
         return;
       }
       if (url.pathname === "/api/transcribe" && req.method === "POST") {
@@ -358,7 +369,9 @@ function cleanup() {
 process.on("exit", cleanup);
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => process.exit(0));
 
-const local = createHttpServer(makeHandler({ lan: false }));
+const localHandler = makeHandler("local");
+const tailscaleHandler = makeHandler("tailscale");
+const local = createHttpServer((req, res) => (TAILSCALE && TS_HOSTS.has(hostnameOf(req.headers.host)) ? tailscaleHandler(req, res) : localHandler(req, res)));
 local.on("error", (error) => {
   if (error.code === "EADDRINUSE") console.error(`Port ${PORT} sedang dipakai. Mesin Notula mungkin sudah berjalan: buka http://localhost:${PORT}`);
   else console.error(error.message);
@@ -371,13 +384,21 @@ local.listen(PORT, "127.0.0.1", async () => {
   console.log(`  Buka di komputer ini : http://localhost:${PORT}`);
   console.log(`  Transkripsi (Whisper): ${whisper.ready ? "siap" : whisper.installed ? "model belum diunduh" : "whisper.cpp belum terpasang"}`);
   console.log(`  Claude Code          : ${!claude.installed ? "belum terpasang" : claude.loggedIn ? `masuk, paket ${claude.plan || "tidak diketahui"}` : "belum masuk (jalankan `claude`, lalu /login)"}`);
-  if (!LAN) console.log("  HP dan iPad          : mati. Jalankan dengan --lan untuk menyalakannya.");
+  if (TAILSCALE) {
+    if (TS_HOSTS.size === 0) console.log("  Dari mana saja       : Tailscale tidak ditemukan atau belum masuk. Pasang dan masuk ke Tailscale, lalu jalankan ulang.");
+    else {
+      for (const host of TS_HOSTS) console.log(`  Dari mana saja       : https://${host}`);
+      console.log(`  Kode akses           : ${ACCESS_CODE}`);
+      console.log(`  Jika alamat itu belum menjawab, jalankan sekali: tailscale serve --bg ${PORT}`);
+    }
+  }
+  if (!LAN && !TAILSCALE) console.log("  HP dan iPad          : mati. Jalankan dengan --lan (Wi-Fi) atau --tailscale (dari mana saja).");
   void warmUp();
 });
 
 if (LAN) {
   try {
-    const secure = createHttpsServer(loadCertificate(), makeHandler({ lan: true }));
+    const secure = createHttpsServer(loadCertificate(), makeHandler("lan"));
     secure.on("error", (error) => console.error(`Sambungan Wi-Fi gagal dinyalakan: ${error.message}`));
     secure.listen(LAN_PORT, "0.0.0.0", () => {
       console.log("  HP dan iPad (Wi-Fi yang sama):");

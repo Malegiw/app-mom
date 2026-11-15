@@ -30,6 +30,17 @@ Mesin hanya menerima permintaan dari komputer itu sendiri, dari situs Notula yan
 
 Pemakaian langganan mengikuti ketentuan Anthropic untuk pemakaian pribadi. Setiap orang memakai mesin dengan langganan Claude miliknya sendiri di komputernya sendiri.
 
+## Memakai mesin dari mana saja (Tailscale)
+
+Wi-Fi yang sama tidak selalu ada. Dengan [Tailscale](https://tailscale.com) (gratis untuk pemakaian pribadi), HP dan iPad bisa memakai mesin di Mac mini dari mana saja, tanpa membuka router dan tanpa kunci API.
+
+1. Pasang Tailscale di Mac mini, HP, dan iPad, lalu masuk dengan akun yang sama.
+2. Di Mac mini: `tailscale serve --bg 8787` (sekali saja). Ini memberi mesin alamat HTTPS pribadi.
+3. Jalankan mesin dengan `npm run start:remote`, atau nyalakan otomatis dengan `./scripts/autostart.sh install`.
+4. Di Pengaturan pada Mac mini, salin alamat `https://...ts.net` dan kode akses. Isi keduanya di Pengaturan HP dan iPad.
+
+Mesin tetap meminta kode akses untuk setiap permintaan dari jauh, dan hanya perangkat di jaringan Tailscale Anda yang bisa menjangkaunya. Mac mini harus menyala dan terhubung ke internet.
+
 ## Yang bisa dilakukan
 
 - **Merekam rapat** lewat mikrofon, dengan transkrip langsung selama rapat berjalan.

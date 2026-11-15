@@ -167,8 +167,7 @@ export function SettingsPage() {
           pairing?.enabled ? (
             <>
               <p>
-                Kode akses adalah kata sandi pendek agar hanya perangkat Anda yang bisa memakai mesin. Di HP atau iPad pada Wi-Fi yang sama, buka salah satu alamat ini, lalu masukkan kode di bawah di
-                Pengaturan perangkat itu.
+                Kode akses adalah kata sandi pendek agar hanya perangkat Anda yang bisa memakai mesin. Di HP atau iPad, buka Pengaturan, isi Alamat mesin dengan salah satu alamat ini (alamat Tailscale bisa dipakai dari mana saja, alamat lain hanya di Wi-Fi yang sama), lalu isi kode akses di bawah.
               </p>
               <div className="group">
                 {pairing.urls.map((url) => (
@@ -187,7 +186,7 @@ export function SettingsPage() {
             </>
           ) : (
             <p>
-              Agar HP dan iPad di Wi-Fi yang sama bisa memakai mesin ini, jalankan mesin dengan <code>npm run start:lan</code>. Alamat dan kode aksesnya akan muncul di sini.
+              Agar HP dan iPad bisa memakai mesin ini dari mana saja, jalankan mesin dengan <code>npm run start:remote</code> (perlu Tailscale). Alamat dan kode aksesnya akan muncul di sini.
             </p>
           )
         ) : (
@@ -203,9 +202,9 @@ export function SettingsPage() {
           />
         )}
         <Input
-          label="Alamat mesin (opsional)"
-          description="Kosongkan untuk mencari otomatis."
-          placeholder="http://127.0.0.1:8787"
+          label="Alamat mesin"
+          description="Di HP dan iPad, isi alamat https dari komputer mesin (lihat Pengaturan di komputer itu). Di komputer mesin, kosongkan."
+          placeholder="https://nama-mac.tailnet.ts.net"
           autoComplete="off"
           spellCheck={false}
           value={settings.engineUrl}

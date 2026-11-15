@@ -12,7 +12,8 @@
     "engine": "node engine/server.mjs",
     "engine:lan": "node engine/server.mjs --lan",
     "start": "npm run build && node engine/server.mjs",
-    "start:lan": "npm run build && node engine/server.mjs --lan"
+    "start:lan": "npm run build && node engine/server.mjs --lan",
+    "start:remote": "npm run build && node engine/server.mjs --lan --tailscale"
   },
   "type": "module",
   "dependencies": {
