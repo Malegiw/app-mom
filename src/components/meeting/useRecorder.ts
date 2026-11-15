@@ -7,6 +7,18 @@ import { describeCaptureError, extensionForMime, startRecording, type AudioSourc
 import { LiveTranscriber, speechSupported } from "@/lib/speech";
 import { uid, type Lang, type Meeting } from "@/lib/types";
 
+type WakeLockSentinel = { release: () => Promise<void> };
+
+/** Asks the browser to keep the screen on. Not every browser has it, and it can refuse, so failure is quiet. */
+async function keepScreenOn(): Promise<WakeLockSentinel | null> {
+  try {
+    const nav = navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<WakeLockSentinel> } };
+    return (await nav.wakeLock?.request("screen")) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export type RecorderStatus = "idle" | "starting" | "recording" | "paused" | "saving";
 
 /**
@@ -40,7 +52,9 @@ interface ActiveRecording {
   accumulated: number;
   resumedAt: number;
   running: boolean;
-  wakeLock: { release: () => Promise<void> } | null;
+  wakeLock: WakeLockSentinel | null;
+  /** When the page was last hidden, or 0. Hidden pages may lose the microphone. */
+  hiddenAt: number;
   timer: number;
 }
 
@@ -181,6 +195,7 @@ export function useRecorder(meeting: Meeting | undefined, onFinished?: (recordin
         resumedAt: 0,
         running: false,
         wakeLock: null,
+        hiddenAt: 0,
         timer: 0,
       };
 
@@ -191,13 +206,8 @@ export function useRecorder(meeting: Meeting | undefined, onFinished?: (recordin
           onEnded: () => void stopRef.current(),
         });
         if (mode === "engine") chunker = new LiveChunker(session.sampleRate, (chunk) => transcribeChunk(rec, chunk));
-        try {
-          // Keeps a phone or tablet from sleeping mid-meeting. Not every browser has it.
-          const nav = navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> } };
-          rec.wakeLock = (await nav.wakeLock?.request("screen")) ?? null;
-        } catch {
-          rec.wakeLock = null;
-        }
+        // Keeps a phone or tablet from sleeping mid-meeting.
+        rec.wakeLock = await keepScreenOn();
         rec.session = session;
         rec.chunker = chunker;
         rec.resumedAt = performance.now();
@@ -262,6 +272,31 @@ export function useRecorder(meeting: Meeting | undefined, onFinished?: (recordin
       void finish(false);
     };
   }, [finish]);
+
+  // The browser lets go of the screen lock whenever the page is hidden. Take it again on return, and
+  // say so if the page was away long enough that the microphone may have been cut.
+  useEffect(() => {
+    if (status !== "recording" && status !== "paused") return;
+    const onVisibility = () => {
+      const rec = active.current;
+      if (!rec) return;
+      if (document.visibilityState === "hidden") {
+        rec.hiddenAt = performance.now();
+        return;
+      }
+      void keepScreenOn().then((lock) => {
+        void rec.wakeLock?.release().catch(() => undefined);
+        rec.wakeLock = lock;
+      });
+      const awayMs = rec.hiddenAt ? performance.now() - rec.hiddenAt : 0;
+      rec.hiddenAt = 0;
+      if (rec.running && awayMs > 3000) {
+        setNotice("Notula sempat berada di latar belakang, jadi rekaman mungkin terpotong selama itu. Biarkan Notula tetap di layar saat merekam.");
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [status]);
 
   // Closing the tab mid-recording would lose the audio, so ask first.
   useEffect(() => {
