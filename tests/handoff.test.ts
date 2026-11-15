@@ -25,6 +25,13 @@ describe("buildHandoffPrompt", () => {
     expect(prompt).toContain("Pictures attached: 0");
   });
 
+  it("asks Claude for pictures in the brand colors", () => {
+    const prompt = buildHandoffPrompt(buildSampleMeeting(new Date(2026, 10, 14)), "id");
+    expect(prompt).toContain('"visuals"');
+    expect(prompt).toContain("#0F4C81");
+    expect(prompt).toContain("#FE5000");
+  });
+
   it("refuses an empty transcript", () => {
     const empty = buildSampleMeeting();
     empty.segments = [];
@@ -33,6 +40,18 @@ describe("buildHandoffPrompt", () => {
 });
 
 describe("parseHandoffReply", () => {
+  it("keeps the pictures Claude drew", () => {
+    const svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900'><rect width='1600' height='900' fill='#fff'/></svg>";
+    const parsed = parseHandoffReply(JSON.stringify({ ...reply, visuals: [{ title: "Alur", caption: "Alur rapat", svg }] }));
+    expect(parsed.visuals).toHaveLength(1);
+    expect(parsed.visuals[0].svg).toContain("<svg");
+  });
+
+  it("treats a missing or broken pictures list as empty", () => {
+    expect(parseHandoffReply(JSON.stringify(reply)).visuals).toEqual([]);
+    expect(parseHandoffReply(JSON.stringify({ ...reply, visuals: "oops" })).visuals).toEqual([]);
+  });
+
   it("reads a bare JSON object", () => {
     expect(parseHandoffReply(JSON.stringify(reply)).title).toBe(reply.title);
   });

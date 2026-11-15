@@ -7,7 +7,7 @@ import { Avatar } from "@/components/arc/avatar/avatar";
 import { Badge } from "@/components/arc/badge/badge";
 import { Button } from "@/components/arc/button/button";
 import { EmptyState } from "@/components/arc/empty-state/empty-state";
-import { TextShimmer } from "@/components/arc/text-shimmer/text-shimmer";
+import { AgentProgress } from "@/components/beui/agent-progress";
 import { listAssets, updateMeeting } from "@/lib/db";
 import { modelDisplayName, useEngine } from "@/lib/engine";
 import { useSettings } from "@/lib/settings";
@@ -35,7 +35,7 @@ export function MinutesTab({ meeting, generator, onOpenTab }: { meeting: Meeting
   if (generator.working) {
     return (
       <div className="panel working" aria-busy="true">
-        <TextShimmer as="p">{generator.stage === "drawing" ? "Menyiapkan gambar notulen" : "Menyusun notulen dari transkrip"}</TextShimmer>
+        <AgentProgress label={generator.stage === "drawing" ? "Menyiapkan gambar notulen" : "Menyusun notulen dari transkrip"} />
         <p className="muted small" style={{ fontVariantNumeric: "tabular-nums" }}>
           {generator.stage === "drawing"
             ? "Gambar buatan Claude sedang diubah menjadi berkas gambar."

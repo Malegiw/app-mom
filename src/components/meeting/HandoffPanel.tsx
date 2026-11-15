@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, ClipboardCopy, ClipboardPaste, ExternalLink } from "lucide-react";
+import { Check, ClipboardPaste, ExternalLink } from "lucide-react";
 import { Alert } from "@/components/arc/alert/alert";
 import { Button } from "@/components/arc/button/button";
 import { Textarea } from "@/components/arc/textarea/textarea";
@@ -8,7 +8,7 @@ import { buildHandoffPrompt, HandoffError, parseHandoffReply } from "@/lib/hando
 import { toMinutes } from "@/lib/minutesPrompt";
 import { getSettings } from "@/lib/settings";
 import type { Meeting } from "@/lib/types";
-import { mergeAttendees } from "./useMinutesGenerator";
+import { mergeAttendees, saveVisuals } from "./useMinutesGenerator";
 
 const PLACEHOLDER_TITLE = "Rapat tanpa judul";
 const ICON = { size: 18, strokeWidth: 1.75, "aria-hidden": true } as const;
@@ -43,17 +43,38 @@ export function HandoffPanel({ meeting, onDone, onCancel }: { meeting: Meeting; 
     }
   }
 
-  async function apply() {
+  /** One tap: copies the prompt and opens Claude in a new tab. */
+  async function copyAndOpen() {
+    await copyPrompt();
+    window.open("https://claude.ai/new", "_blank", "noopener");
+  }
+
+  /** One tap: reads Claude's answer from the clipboard and builds the minutes from it. */
+  async function pasteAndApply() {
+    setError(null);
+    let text = "";
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      setError("Browser tidak mengizinkan membaca salinan. Buka Cara manual di bawah, tempel jawaban Claude di sana, lalu tekan Buat notulen.");
+      return;
+    }
+    setReply(text);
+    await apply(text);
+  }
+
+  async function apply(raw = reply) {
     setError(null);
     setSaving(true);
     try {
-      const result = parseHandoffReply(reply);
+      const result = parseHandoffReply(raw);
       const title = result.title.trim();
       await updateMeeting(meeting.id, {
         minutes: toMinutes(result, "claude.ai"),
         attendees: mergeAttendees(meeting.attendees, result.attendees),
         ...(meeting.title === PLACEHOLDER_TITLE && title ? { title } : {}),
       });
+      await saveVisuals(meeting.id, result.visuals);
       onDone();
     } catch (cause) {
       setError(cause instanceof HandoffError ? cause.message : "Notulen gagal disimpan. Coba lagi.");
@@ -77,26 +98,30 @@ export function HandoffPanel({ meeting, onDone, onCancel }: { meeting: Meeting; 
 
       <ol className="steps">
         <li>
-          <strong>Salin prompt.</strong> Isinya petunjuk, data rapat, dan transkrip.
+          <strong>Salin prompt dan buka Claude.</strong> Tempel di percakapan baru, lalu kirim.
         </li>
         <li>
-          <strong>Tempel di claude.ai</strong> pada percakapan baru, lalu kirim.
+          <strong>Setelah Claude menjawab,</strong> ketuk Salin pada jawabannya.
         </li>
         <li>
-          <strong>Salin jawaban Claude</strong> dan tempel di kolom bawah.
+          <strong>Kembali ke sini</strong> dan ketuk Tempel jawaban. Notulen dan gambarnya langsung dibuat.
         </li>
       </ol>
 
       <div className="row">
-        <Button className="tone-blue" onClick={() => void copyPrompt()} disabled={!ready}>
-          {copied ? <Check {...ICON} /> : <ClipboardCopy {...ICON} />}
-          {copied ? "Tersalin" : "Salin prompt"}
+        <Button className="tone-blue" onClick={() => void copyAndOpen()} disabled={!ready}>
+          {copied ? <Check {...ICON} /> : <ExternalLink {...ICON} />}
+          {copied ? "Tersalin, Claude terbuka" : "Salin prompt dan buka Claude"}
         </Button>
-        <a className="linkButton" href="https://claude.ai/new" target="_blank" rel="noreferrer">
-          <ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" /> Buka claude.ai
-        </a>
+        <Button className="tone-orange" onClick={() => void pasteAndApply()} disabled={!ready} loading={saving}>
+          <ClipboardPaste {...ICON} />
+          Tempel jawaban Claude
+        </Button>
       </div>
 
+      <details className="manual">
+        <summary>Cara manual, jika tombol di atas tidak jalan</summary>
+        <div className="stack">
       <Textarea label="Isi prompt (bisa dipilih dan disalin manual)" value={prompt} readOnly rows={5} spellCheck={false} onFocus={(event) => event.currentTarget.select()} />
 
       <Textarea
@@ -109,11 +134,13 @@ export function HandoffPanel({ meeting, onDone, onCancel }: { meeting: Meeting; 
         placeholder='{ "title": "...", ... }'
       />
 
+          <Button className="tone-blue" onClick={() => void apply()} disabled={!reply.trim() || saving}>
+            Buat notulen dari jawaban
+          </Button>
+        </div>
+      </details>
+
       <div className="row">
-        <Button className="tone-blue" onClick={() => void apply()} disabled={!reply.trim() || saving}>
-          <ClipboardPaste {...ICON} />
-          Buat notulen dari jawaban
-        </Button>
         <Button variant="secondary" onClick={onCancel}>
           Batal
         </Button>

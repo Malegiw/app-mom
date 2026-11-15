@@ -56,6 +56,25 @@ export function SettingsPage() {
         <p className="lede">Pengaturan tersimpan hanya di perangkat ini.</p>
       </div>
 
+      <section className="settingsSection" aria-labelledby="s-cara">
+        <h2 id="s-cara" className="sectionTitle">
+          Tiga cara menyusun notulen
+        </h2>
+        <p>Situs web tidak boleh memakai langganan Claude Anda secara langsung. Karena itu ada tiga cara, dari yang paling otomatis:</p>
+        <ol className="steps">
+          <li>
+            <strong>Mesin Notula (otomatis, tanpa biaya tambahan).</strong> Program kecil di MacBook Anda yang menjalankan Claude Code dengan langganan Anda. Notulen dan gambar jadi sendiri. Perlu
+            dinyalakan di MacBook; HP dan iPad memakainya lewat kode akses.
+          </li>
+          <li>
+            <strong>Kunci API (otomatis, ditagih terpisah).</strong> Berjalan di perangkat mana saja tanpa mesin, tetapi dibayar per pemakaian di luar langganan.
+          </li>
+          <li>
+            <strong>Salin-tempel (manual, gratis).</strong> Tanpa mesin dan tanpa kunci: dua ketukan ke claude.ai dan kembali. Jawaban Claude ikut membawa gambar.
+          </li>
+        </ol>
+      </section>
+
       <section className="settingsSection" aria-labelledby="s-mesin">
         <div className="sectionHead">
           <h2 id="s-mesin" className="sectionTitle">
@@ -142,12 +161,15 @@ export function SettingsPage() {
 
       <section className="settingsSection" aria-labelledby="s-hp">
         <h2 id="s-hp" className="sectionTitle">
-          HP dan iPad
+          Memakai mesin dari HP dan iPad
         </h2>
         {onEngineComputer ? (
           pairing?.enabled ? (
             <>
-              <p>Di HP atau iPad pada Wi-Fi yang sama, buka salah satu alamat ini lalu masukkan kode aksesnya di Pengaturan.</p>
+              <p>
+                Kode akses adalah kata sandi pendek agar hanya perangkat Anda yang bisa memakai mesin. Di HP atau iPad pada Wi-Fi yang sama, buka salah satu alamat ini, lalu masukkan kode di bawah di
+                Pengaturan perangkat itu.
+              </p>
               <div className="group">
                 {pairing.urls.map((url) => (
                   <div key={url} className="optionRow">
@@ -194,11 +216,11 @@ export function SettingsPage() {
 
       <section className="settingsSection" aria-labelledby="s-claude">
         <h2 id="s-claude" className="sectionTitle">
-          Tanpa mesin
+          Tanpa mesin: salin-tempel atau kunci API
         </h2>
         <p>
-          Bila mesin tidak terhubung, notulen tetap bisa dibuat lewat langganan Claude dengan cara salin-tempel ke claude.ai di tab Notulen. Pilihan lain adalah kunci API, yang ditagih terpisah dari
-          langganan.
+          Bila mesin tidak menyala, buka tab Notulen lalu ketuk Buat notulen: aplikasi menyalin prompt dan membuka claude.ai, lalu Anda menempel jawabannya kembali dengan satu ketukan. Atau isi kunci
+          API di bawah agar semuanya otomatis; kunci ditagih terpisah dari langganan.
         </p>
         <Input
           label="Kunci API Claude (opsional)"
