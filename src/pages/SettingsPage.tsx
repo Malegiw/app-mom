@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useSearchParams } from "react-router-dom";
+import { Alert } from "@/components/arc/alert/alert";
 import { Badge } from "@/components/arc/badge/badge";
 import { Button } from "@/components/arc/button/button";
 import { ConfirmMorph } from "@/components/arc/confirm-morph/confirm-morph";
@@ -13,6 +15,7 @@ import { enginePairing, refreshEngine, useEngine, type EngineInfo } from "@/lib/
 import { ENGINE_MODEL_OPTIONS, MODEL_OPTIONS, saveSettings, useSettings } from "@/lib/settings";
 import type { Lang } from "@/lib/types";
 
+const PUBLISHED_APP = "https://malegiw.github.io/app-mom/";
 const percent = (share: number | null) => (share === null ? "" : `${Math.round(share * 100)}%`);
 const capitalize = (text: string) => (text ? text[0].toUpperCase() + text.slice(1) : text);
 
@@ -29,6 +32,10 @@ export function SettingsPage() {
   const count = useLiveQuery(() => db.meetings.count(), []) ?? 0;
   const [checking, setChecking] = useState(false);
   const [pairing, setPairing] = useState<{ enabled: boolean; code: string; urls: string[] } | null>(null);
+  const [params, setParams] = useSearchParams();
+  const [copiedLink, setCopiedLink] = useState(false);
+  // An address that arrived in a link is only used after the person says yes: a link from anyone could name any server.
+  const [offered, setOffered] = useState<string | null>(null);
   const status = engineLabel(engine);
   const ready = engine.state === "ready";
   // On the engine's own computer the page is opened from localhost. Anywhere else it is a phone, tablet, or the published site.
@@ -43,6 +50,26 @@ export function SettingsPage() {
     };
   }, [ready, onEngineComputer, engine.lan]);
 
+  useEffect(() => {
+    const address = params.get("mesin")?.trim().replace(/\/+$/, "") ?? "";
+    if (!address) return;
+    if (/^https:\/\/[^/\s]+$/i.test(address)) setOffered(address);
+    setParams({}, { replace: true });
+  }, [params, setParams]);
+
+  const remoteUrl = pairing?.urls.find((url) => url.endsWith(".ts.net")) ?? "";
+  const connectLink = remoteUrl ? `${PUBLISHED_APP}#/pengaturan?mesin=${encodeURIComponent(remoteUrl)}` : "";
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(connectLink);
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      // Clipboard refused: the link is shown on screen to be copied by hand.
+    }
+  }
+
   async function recheck() {
     setChecking(true);
     await refreshEngine();
@@ -55,6 +82,30 @@ export function SettingsPage() {
         <h1 className="pageTitle">Pengaturan</h1>
         <p className="lede">Pengaturan tersimpan hanya di perangkat ini.</p>
       </div>
+
+      {offered ? (
+        <Alert tone="info" title="Sambungkan ke mesin Notula ini?">
+          <p>
+            Tautan yang Anda buka mengusulkan alamat <code>{offered}</code>. Hanya sambungkan jika itu alamat mesin Anda sendiri, karena transkrip rapat akan dikirim ke sana.
+          </p>
+          <div className="row">
+            <Button
+              className="tone-blue"
+              size="sm"
+              onClick={() => {
+                saveSettings({ engineUrl: offered });
+                setOffered(null);
+                void refreshEngine();
+              }}
+            >
+              Sambungkan
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setOffered(null)}>
+              Abaikan
+            </Button>
+          </div>
+        </Alert>
+      ) : null}
 
       <section className="settingsSection" aria-labelledby="s-cara">
         <h2 id="s-cara" className="sectionTitle">
@@ -183,6 +234,19 @@ export function SettingsPage() {
                   <code>{pairing.code}</code>
                 </div>
               </div>
+              {connectLink ? (
+                <>
+                  <p>
+                    Lewat Tailscale kode akses tidak perlu diisi: mesin mengenali akun Tailscale Anda. Cukup buka tautan sambung ini di HP atau iPad (kirim lewat AirDrop, Catatan, atau Pesan), lalu ketuk
+                    Sambungkan.
+                  </p>
+                  <div className="row">
+                    <Button variant="secondary" size="sm" onClick={() => void copyLink()}>
+                      {copiedLink ? "Tautan tersalin" : "Salin tautan sambung"}
+                    </Button>
+                  </div>
+                </>
+              ) : null}
             </>
           ) : (
             <p>
@@ -191,8 +255,8 @@ export function SettingsPage() {
           )
         ) : (
           <Input
-            label="Kode akses mesin"
-            description="Kode ini tampil di Pengaturan pada komputer mesin."
+            label="Kode akses mesin (kosongkan jika lewat Tailscale)"
+            description="Lewat alamat Tailscale kode tidak diperlukan. Untuk Wi-Fi yang sama, kode tampil di Pengaturan pada komputer mesin."
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}

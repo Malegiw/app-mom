@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { loadCertificate } from "./cert.mjs";
 import { claudeStatus, lastKnownUsage, runClaude } from "./claude.mjs";
 import { LAN_PORT, lanAddresses, loadAccessCode, localHostname, PORT, PUBLISHED_ORIGINS } from "./config.mjs";
-import { tailscaleHosts } from "./tailscale.mjs";
+import { tailscaleInfo } from "./tailscale.mjs";
 import { transcribeFile, warmUp, whisperStatus } from "./whisper.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -33,7 +33,8 @@ const VERSION = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8")
 const LAN = process.argv.includes("--lan") || process.env.NOTULA_LAN === "1";
 const TMP = mkdtempSync(path.join(os.tmpdir(), "notula-"));
 const TAILSCALE = process.argv.includes("--tailscale") || process.env.NOTULA_TAILSCALE === "1";
-const TS_HOSTS = new Set(TAILSCALE ? await tailscaleHosts() : []);
+const TS = TAILSCALE ? await tailscaleInfo() : { hosts: [], owner: "" };
+const TS_HOSTS = new Set(TS.hosts);
 const ACCESS_CODE = LAN || TAILSCALE ? loadAccessCode() : "";
 
 const MAX_AUDIO_BYTES = 2 * 1024 ** 3;
@@ -81,6 +82,18 @@ function originAllowed(origin, mode) {
   // The app as this engine serves it over Wi-Fi.
   if (mode === "tailscale") return url.protocol === "https:" && TS_HOSTS.has(url.hostname);
   return mode === "lan" && url.protocol === "https:" && networkNames().has(url.hostname) && Number(url.port) === LAN_PORT;
+}
+
+const LOCAL_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+
+/**
+ * `tailscale serve` forwards requests from this computer and stamps each with the Tailscale account
+ * of the sender. Tailscale sets that header itself, so for a request that really came through serve
+ * it names the person who is signed in on the device. Only the engine's owner is let in this way.
+ */
+function ownerIdentified(req, mode) {
+  if (mode !== "tailscale" || !TS.owner || !LOCAL_ADDRESSES.has(req.socket.remoteAddress ?? "")) return false;
+  return String(req.headers["tailscale-user-login"] ?? "").trim().toLowerCase() === TS.owner;
 }
 
 function codeMatches(header = "") {
@@ -328,7 +341,7 @@ function makeHandler(mode) {
           sendJson(res, 429, { error: "Terlalu banyak kode salah. Coba lagi lima menit lagi." });
           return;
         }
-        authorized = codeMatches(req.headers.authorization);
+        authorized = ownerIdentified(req, mode) || codeMatches(req.headers.authorization);
         if (!authorized && req.headers.authorization) noteFailure(address);
       }
 
